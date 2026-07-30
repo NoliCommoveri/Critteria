@@ -739,13 +739,22 @@ enforces the once-a-day rate limit via `helper_action_usage`
 3. **Backend + Social v1 (in progress)**: Cloudflare Workers with
    `[assets]` binding + D1, deployed and live at `critteria.immotus.app`
    (§9 Steps 1–8 done). `SIGNUP_SECRET`-gated family creation is verified
-   working against the real deployment; the pairing-code round-trip and
-   frontend sync layer (§9 Step 10) are not built yet. Server-side pet
-   state with lazy decay, polling reads at ~5 s while foregrounded.
-   Read-only sibling visits, once-a-day helper actions on a sibling's
-   pet, gifting, presence badge derived from `pet_events` — all
-   implemented server-side in `functions/api/`, not yet exercised
-   against the live deployment. Concrete deploy recipe and every gotcha
+   working against the real deployment; the pairing-code round-trip is
+   still unconfirmed against the live deployment (§9 Step 9). The
+   frontend sync layer (§9 Step 10) is now built: `index.html` has a
+   family-setup screen (first-tablet secret or pairing code), a kid
+   picker (pick/add + claim), server-synced pet state polled every ~5 s
+   while foregrounded with `localStorage` as warm cache/offline
+   fallback, and a "Visit a sibling" screen with Feed/Play helper-action
+   buttons wired to the once-a-day-limited endpoint. A device with no
+   family token still plays entirely offline exactly as before (species
+   picker → local decay/actions), and a device that already has a
+   locally-raised pet is never force-migrated — connecting is an opt-in
+   🔗 tap that upload-creates its pet server-side. Not yet wired in the
+   UI: gifting (`POST /api/pets/:id/gift` exists server-side, no
+   frontend for it) and the presence badge from `pet_events`; renaming
+   and color-variant changes also stay device-local since there's no
+   `PATCH /api/pets/:id` yet. Concrete deploy recipe and every gotcha
    we've hit are in §9.
 4. **End-state features**: lifecycles/aging, accessories, locations
    (color variants already landed on `main` as palette-remap work).
@@ -1238,17 +1247,77 @@ curl -X POST https://critteria.immotus.app/api/pair \
 *Checkpoint:* `SELECT * FROM families;` in the D1 Console shows one
 row. The backend is now real, and nothing in the app has changed yet.
 
-### Step 10 — Wire the frontend
+### Step 10 — Wire the frontend (done)
 
-Now `index.html` gets a sync layer bolted on: on first launch, a family
-passcode + kid pick-avatar-and-PIN flow that calls `/api/family` (or
-`/api/pair` for the second-onwards tablet) and stashes the returned
-device token in `localStorage`. From then on, the existing `state` object
-is read from and written back to `/api/pets/:id` every ~5 s while the
-tab is foregrounded — `localStorage` becomes a warm cache + offline
-read, not the source of truth. Add a "Visit sibling" view that lists
-family pets, renders one side-by-side with your own, and offers the
-once-a-day helper-action buttons (server-enforced per §7).
+`index.html` has a sync layer bolted on. A new `device` object
+(`immotus-device-v1` in `localStorage`, separate from the existing
+`immotus-pet-v1` pet-state key) tracks `deviceId` (generated once,
+stable), `token`, `familyId`, `kidId`, and `petId`. `boot()` is the
+single place that decides which of five screens to show, based on what
+`device` currently has:
+
+- No `token` + no locally-raised pet → **family-setup** screen: "First
+  tablet" (enters the `SIGNUP_SECRET`, POSTs `/api/family`) or "I have a
+  code" (POSTs `/api/pair`). Either way the returned token lands in
+  `device` and `boot()` re-runs.
+- No `token` + an existing locally-raised pet → skip straight to the
+  pet screen, unchanged from the original prototype. Deliberately **not
+  forced**: a device that already has a pet raised in `localStorage`
+  keeps working exactly as before rather than getting interrupted by
+  this feature landing. A 🔗 button next to the rename button opens
+  family-setup on demand; connecting later upload-creates that pet
+  server-side via `POST /api/pets` (species/colorVariant/name carried
+  over, stats reset to the 80/80/80/80 default — a one-time,
+  documented trade-off).
+- `token` but no `kidId` → **kid-picker** screen: pick an existing kid
+  (`GET /api/kids`, `POST /api/kids/:id/claim`) or add a new one (name +
+  one of eight emoji avatars, `POST /api/kids` then claim).
+- `token` + `kidId` but no `petId` → `resolveOrCreatePet()` calls
+  `GET /api/pets`, looks for a pet already owned by this kid, and either
+  adopts it or falls through to the species picker (whose click handler
+  now branches: `POST /api/pets` when synced, the original local-only
+  path otherwise).
+- All four set → the pet screen, server-authoritative: `pollPet()` GETs
+  `/api/pets/:id` every 5 s via `setInterval`, skipped when
+  `document.visibilityState !== 'visible'`; Feed/Play/Clean/Sleep POST
+  to `/api/pets/:id/action` and adopt the returned state
+  (`applyServerPet`) instead of running the local decay/effect math.
+  `localStorage` still gets written on every sync (`saveState()` inside
+  `applyServerPet`), so a reload or a dropped connection falls back to
+  the last-known cache rather than a blank state. A local 15 s decay
+  timer only runs pre-sync; `stopLocalTick()` retires it the moment a
+  server pet takes over, so the two clocks never fight over the same
+  stats.
+
+"Visit a sibling" is a new screen off a button that only appears once
+synced: it lists the other kids' pets (`GET /api/pets` joined against
+`GET /api/kids` for name/avatar), renders the visitor's own pet and the
+selected sibling's pet side by side (`renderMiniPet` — a stripped-down
+version of the main renderer: mood → pose → sprite, no color-variant
+recolor, to keep it synchronous), and offers Feed/Play buttons that
+POST to the sibling pet's `/api/pets/:id/action`. A 429 there (already
+helped today, server-enforced per §7) surfaces as a plain status
+message rather than a client-side guess at the daily limit.
+
+Verified with a scripted Playwright walkthrough against a mocked API
+(fresh device → wrong secret → correct secret → add kid → claim →
+pick species → server pet created → Feed syncs → visit a sibling →
+helper Feed succeeds → reload resumes without re-setup) and a second
+walkthrough with every `/api/*` request forced to fail, confirming the
+"Not now" link on family-setup still reaches a fully offline,
+fully-playable local pet. One real bug caught by that harness before
+it shipped: `setUiScreen('app')` was being called throughout instead of
+`setUiScreen('app-body')` (the screen's actual element id), which
+silently left every screen hidden after finishing setup — worth
+knowing about since it's the kind of typo that a manual click-through
+would probably have also caught, but the scripted version caught it
+immediately and made the fix easy to verify.
+
+Not wired into the frontend by this pass, left for later: gifting
+(`POST /api/pets/:id/gift` exists server-side, no UI button for it) and
+the presence badge (`GET /api/pets/:id/events` returns one, nothing
+reads it yet). Both are additive — neither touches the sync plumbing
+above.
 
 ### Rollback
 

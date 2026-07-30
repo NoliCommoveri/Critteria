@@ -312,6 +312,105 @@
     color: var(--muted);
     margin-top: 1.25rem;
   }
+
+  /* --- Family sync screens (family-setup, kid-picker, sibling-visit) --- */
+  .setup-choice-row {
+    display: flex;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+  .inline-form {
+    display: flex;
+    gap: 0.5rem;
+    margin: 0 0 0.75rem;
+  }
+  .inline-form input {
+    flex: 1;
+    padding: 0.6rem 0.8rem;
+    border-radius: 10px;
+    border: 1px solid var(--bar-track);
+    font-size: 1rem;
+  }
+  .inline-form button {
+    padding: 0.6rem 1rem;
+    border-radius: 10px;
+    border: none;
+    background: var(--accent);
+    color: white;
+    font-weight: 600;
+  }
+  .avatar-row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.5rem;
+    margin: 0.6rem 0 1rem;
+  }
+  .avatar-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 2px solid var(--bar-track);
+    cursor: pointer;
+    font-size: 1.15rem;
+    background: var(--card);
+  }
+  .avatar-btn.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent) inset;
+  }
+  .back-link {
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-size: 0.85rem;
+    cursor: pointer;
+    margin-top: 0.5rem;
+  }
+  .sibling-pair {
+    display: flex;
+    justify-content: center;
+    gap: 1.25rem;
+    margin: 1rem 0;
+  }
+  .mini-pet-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 110px;
+  }
+  .mini-pet-sprite {
+    width: 80px;
+    height: 80px;
+    object-fit: contain;
+    image-rendering: pixelated;
+  }
+  .mini-pet-name {
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-align: center;
+    margin-top: 0.25rem;
+  }
+  .mini-pet-stats {
+    font-size: 0.72rem;
+    color: var(--muted);
+    text-align: center;
+  }
+  .visit-toggle {
+    display: block;
+    width: 100%;
+    margin-top: 0.75rem;
+    min-height: 48px;
+    border: none;
+    border-radius: 16px;
+    background: var(--card);
+    border: 2px solid var(--bar-track);
+    color: var(--muted);
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
 </style>
 </head>
 <body>
@@ -329,10 +428,59 @@
       </div>
     </div>
 
+    <div class="species-picker" id="family-setup">
+      <h1 class="picker-title">Set up this tablet</h1>
+      <p class="picker-hint">Is this the very first tablet, or do you have a pairing code from another one?</p>
+      <div class="setup-choice-row">
+        <button type="button" class="species-btn" id="setup-choice-first"><span class="emoji">🏠</span> First tablet</button>
+        <button type="button" class="species-btn" id="setup-choice-pair"><span class="emoji">🔗</span> I have a code</button>
+      </div>
+      <form class="inline-form" id="setup-secret-form" style="display: none;">
+        <input type="password" id="setup-secret-input" placeholder="Family setup code" autocomplete="off">
+        <button type="submit">Continue</button>
+      </form>
+      <form class="inline-form" id="setup-pair-form" style="display: none;">
+        <input type="text" id="setup-pair-input" maxlength="6" placeholder="6-character code" autocomplete="off" style="text-transform: uppercase;">
+        <button type="submit">Continue</button>
+      </form>
+      <p class="status" id="setup-status"></p>
+      <button type="button" class="back-link" id="setup-cancel">← Not now</button>
+    </div>
+
+    <div class="species-picker" id="kid-picker">
+      <h1 class="picker-title">Who's playing?</h1>
+      <p class="picker-hint">Pick your name, or add yourself if you're new.</p>
+      <div class="species-row" id="kid-row"></div>
+      <form class="inline-form" id="new-kid-form">
+        <input type="text" id="new-kid-name" maxlength="16" placeholder="Your name" autocomplete="off">
+        <button type="submit">Add me</button>
+      </form>
+      <div class="avatar-row" id="avatar-row"></div>
+      <p class="status" id="kid-status"></p>
+    </div>
+
+    <div class="species-picker" id="sibling-visit">
+      <h1 class="picker-title">Visit a sibling</h1>
+      <div class="species-row" id="sibling-list"></div>
+      <div id="sibling-detail" style="display: none;">
+        <div class="sibling-pair">
+          <div id="my-mini-pet"></div>
+          <div id="sibling-mini-pet"></div>
+        </div>
+        <div class="actions" style="grid-template-columns: repeat(2, 1fr);">
+          <button class="action" id="btn-helper-feed"><span class="emoji">🍎</span> Feed</button>
+          <button class="action" id="btn-helper-play"><span class="emoji">🎾</span> Play</button>
+        </div>
+        <p class="status" id="helper-status"></p>
+      </div>
+      <button type="button" class="back-link" id="visit-back">← Back to your pet</button>
+    </div>
+
     <div class="app-body" id="app-body">
     <div class="name-row">
       <h1 id="pet-name-display">Widget</h1>
       <button class="rename-btn" id="rename-toggle" aria-label="Rename pet">✏️</button>
+      <button class="rename-btn" id="connect-toggle" aria-label="Connect to family" title="Connect to family" style="display: none;">🔗</button>
     </div>
     <form class="rename-form" id="rename-form">
       <input type="text" id="rename-input" maxlength="16" placeholder="Pet's name">
@@ -383,7 +531,9 @@
       <button class="action" id="btn-sleep"><span class="emoji">🌙</span> <span id="sleep-label">Sleep</span></button>
     </div>
 
-    <p class="note">Your pet's care is saved on this device.</p>
+    <button type="button" class="visit-toggle" id="btn-visit" style="display: none;">👀 Visit a sibling</button>
+
+    <p class="note" id="save-note">Your pet's care is saved on this device.</p>
     </div>
   </div>
 
@@ -432,6 +582,56 @@
 
   function saveState() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  // --- Backend sync (SPEC.md §9 Step 10) ----------------------------------
+  //
+  // `device` tracks this tablet's identity in the family backend, separate
+  // from `state` (the pet itself). Until `device.token` exists the app runs
+  // exactly like the original localStorage-only prototype — the API is
+  // never touched, so a deployment with no backend (or one that's
+  // unreachable) behaves identically to before this feature landed.
+  var DEVICE_KEY = 'immotus-device-v1';
+
+  function loadDevice() {
+    var parsed = {};
+    try {
+      var raw = localStorage.getItem(DEVICE_KEY);
+      if (raw) parsed = JSON.parse(raw) || {};
+    } catch (e) {
+      parsed = {};
+    }
+    if (!parsed.deviceId) parsed.deviceId = crypto.randomUUID();
+    return parsed;
+  }
+
+  function saveDevice() {
+    localStorage.setItem(DEVICE_KEY, JSON.stringify(device));
+  }
+
+  var device = loadDevice();
+  saveDevice(); // persist a freshly-generated deviceId immediately
+
+  // Thin fetch wrapper: adds the bearer token when we have one, parses JSON,
+  // and throws on non-2xx so callers can just try/catch. `err.status` lets
+  // callers distinguish e.g. 429 (already helped today) from other failures.
+  async function api(path, opts) {
+    opts = opts || {};
+    var headers = { 'Content-Type': 'application/json' };
+    if (device.token) headers.Authorization = 'Bearer ' + device.token;
+    var res = await fetch(path, {
+      method: opts.method || 'GET',
+      headers: headers,
+      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined
+    });
+    var data = null;
+    try { data = await res.json(); } catch (e) { /* empty/non-JSON body */ }
+    if (!res.ok) {
+      var err = new Error((data && data.error) || ('HTTP ' + res.status));
+      err.status = res.status;
+      throw err;
+    }
+    return data;
   }
 
   function applyDecay(s) {
@@ -872,8 +1072,6 @@
     return src;
   }
 
-  var speciesPicker = document.getElementById('species-picker');
-  var appBody = document.getElementById('app-body');
   var stage = document.getElementById('stage');
   var petSprite = document.getElementById('pet-sprite');
   var statusText = document.getElementById('status-text');
@@ -886,10 +1084,32 @@
   var renameToggle = document.getElementById('rename-toggle');
   var renameForm = document.getElementById('rename-form');
   var renameInput = document.getElementById('rename-input');
-  var speciesButtons = Array.prototype.slice.call(document.querySelectorAll('.species-btn'));
+  // Scoped to #species-row (not the bare .species-btn class, which several
+  // other screens below reuse for visual styling only) so this listener set
+  // never picks up the family-setup/kid-picker/sibling-visit buttons.
+  var speciesButtons = Array.prototype.slice.call(document.querySelectorAll('#species-row .species-btn'));
   var variantRow = document.getElementById('variant-row');
+  var connectToggle = document.getElementById('connect-toggle');
+  var saveNote = document.getElementById('save-note');
+  var btnVisit = document.getElementById('btn-visit');
 
   var state = loadState();
+
+  // --- Screen management ---------------------------------------------------
+  //
+  // One of these five is visible at a time. render() (below) only fills in
+  // #app-body's contents; it no longer decides which screen is showing —
+  // every state transition (species picked, family joined, kid claimed,
+  // visit opened/closed) calls setUiScreen() explicitly instead.
+  var SCREENS = ['species-picker', 'app-body', 'family-setup', 'kid-picker', 'sibling-visit'];
+  var uiScreen = null;
+
+  function setUiScreen(name) {
+    uiScreen = name;
+    SCREENS.forEach(function (id) {
+      document.getElementById(id).style.display = (id === name) ? 'block' : 'none';
+    });
+  }
 
   // Transient, so deliberately not part of the persisted state — reopening
   // the app shouldn't resume a half-finished bath.
@@ -962,13 +1182,10 @@
   });
 
   function render() {
-    if (!state.species) {
-      speciesPicker.style.display = 'block';
-      appBody.style.display = 'none';
-      return;
-    }
-    speciesPicker.style.display = 'none';
-    appBody.style.display = 'block';
+    // Screen visibility is owned by setUiScreen() now (see "Screen
+    // management" above) — this just guards against rendering pet-screen
+    // internals before a species/pet exists yet.
+    if (!state.species) return;
 
     var mood = getMood(state);
     // An action pose (eating, bathing) outranks the mood pose while it holds.
@@ -1014,12 +1231,33 @@
     btnFeed.disabled = state.sleeping;
     btnPlay.disabled = state.sleeping;
     btnClean.disabled = state.sleeping;
+
+    connectToggle.style.display = device.token ? 'none' : 'inline-block';
+    btnVisit.style.display = device.petId ? 'block' : 'none';
+    saveNote.textContent = device.petId
+      ? "Your pet's care is saved online — the whole family can visit."
+      : "Your pet's care is saved on this device.";
   }
+
+  // Local decay ticks only run while this device has no server pet yet —
+  // once synced, decay is computed server-side and picked up by pollPet()
+  // instead (see "Backend sync" below), so the two clocks never fight.
+  var localTickTimer = null;
 
   function tick() {
     applyDecay(state);
     saveState();
     render();
+  }
+
+  function startLocalTick() {
+    tick();
+    if (!localTickTimer) localTickTimer = setInterval(tick, 15000);
+  }
+
+  function stopLocalTick() {
+    clearInterval(localTickTimer);
+    localTickTimer = null;
   }
 
   function flash() {
@@ -1031,6 +1269,10 @@
 
   function doAction(action, fn) {
     return function () {
+      if (device.petId) {
+        syncAction(action === 'sleep' ? (state.sleeping ? 'wake' : 'sleep') : action);
+        return;
+      }
       applyDecay(state);
       fn();
       if (ACTION_POSES[action]) showActionPose(ACTION_POSES[action]);
@@ -1038,6 +1280,25 @@
       render();
       flash();
     };
+  }
+
+  // Server-authoritative counterpart to doAction's local branch: POST the
+  // action and adopt whatever the server computed (functions/api/pets/[id]/
+  // action.js runs the same decay/effect math as the local fn() above, so
+  // the two paths should feel identical to a kid tapping the buttons).
+  async function syncAction(serverAction) {
+    if (ACTION_POSES[serverAction]) showActionPose(ACTION_POSES[serverAction]);
+    flash();
+    try {
+      var data = await api('/api/pets/' + device.petId + '/action', {
+        method: 'POST',
+        body: { action: serverAction }
+      });
+      applyServerPet(data.pet);
+      render();
+    } catch (err) {
+      statusText.textContent = "Couldn't reach the server — try again in a moment.";
+    }
   }
 
   btnFeed.addEventListener('click', doAction('feed', function () {
@@ -1082,15 +1343,450 @@
       // One-time pick: species is locked in once chosen. A future unlock
       // mechanism (see SPEC.md) can lift this guard to allow re-picking.
       if (state.species) return;
-      state.species = btn.dataset.species;
+      var species = btn.dataset.species;
+      if (device.token && device.kidId) {
+        createServerPet(species, 'base', null);
+        return;
+      }
+      state.species = species;
       saveState();
+      setUiScreen('app-body');
+      startLocalTick();
       render();
       flash();
     });
   });
 
-  tick();
-  setInterval(tick, 15000);
+  // --- Family setup screen --------------------------------------------------
+
+  var setupChoiceFirst = document.getElementById('setup-choice-first');
+  var setupChoicePair = document.getElementById('setup-choice-pair');
+  var setupSecretForm = document.getElementById('setup-secret-form');
+  var setupPairForm = document.getElementById('setup-pair-form');
+  var setupStatusEl = document.getElementById('setup-status');
+  var setupCancel = document.getElementById('setup-cancel');
+
+  function setupStatus(text) { setupStatusEl.textContent = text; }
+
+  function deviceLabel() {
+    return (navigator.platform || 'Tablet') + ' — ' + (state.name ? state.name + "'s" : 'family') + ' device';
+  }
+
+  setupChoiceFirst.addEventListener('click', function () {
+    setupPairForm.style.display = 'none';
+    setupSecretForm.style.display = 'flex';
+    setupStatus('');
+  });
+
+  setupChoicePair.addEventListener('click', function () {
+    setupSecretForm.style.display = 'none';
+    setupPairForm.style.display = 'flex';
+    setupStatus('');
+  });
+
+  setupSecretForm.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    var secret = document.getElementById('setup-secret-input').value.trim();
+    setupStatus('Setting up…');
+    try {
+      var data = await api('/api/family', {
+        method: 'POST',
+        body: { signupSecret: secret, deviceId: device.deviceId, label: deviceLabel() }
+      });
+      device.token = data.token;
+      device.familyId = data.familyId;
+      saveDevice();
+      boot();
+    } catch (err) {
+      setupStatus(err.status === 409
+        ? 'A family already exists — use a pairing code from another tablet instead.'
+        : "That code didn't work. Ask a grown-up to check it.");
+    }
+  });
+
+  setupPairForm.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    var code = document.getElementById('setup-pair-input').value.trim();
+    setupStatus('Connecting…');
+    try {
+      var data = await api('/api/pair', {
+        method: 'POST',
+        body: { code: code, deviceId: device.deviceId, label: deviceLabel() }
+      });
+      device.token = data.token;
+      device.familyId = data.familyId;
+      saveDevice();
+      boot();
+    } catch (err) {
+      setupStatus("That code didn't work — codes expire after 5 minutes and work once.");
+    }
+  });
+
+  // Bails out of setup back to whatever this device could already do —
+  // resume the locally-raised pet if one exists, otherwise the plain
+  // species picker, so declining sync never leaves a kid stuck on a screen
+  // with nothing to tap.
+  setupCancel.addEventListener('click', function () {
+    if (state.species) {
+      setUiScreen('app-body');
+      startLocalTick();
+      render();
+    } else {
+      setUiScreen('species-picker');
+    }
+  });
+
+  connectToggle.addEventListener('click', function () {
+    setupSecretForm.style.display = 'none';
+    setupPairForm.style.display = 'none';
+    setupStatus('');
+    setUiScreen('family-setup');
+  });
+
+  // --- Kid picker screen -----------------------------------------------------
+
+  var kidRow = document.getElementById('kid-row');
+  var newKidForm = document.getElementById('new-kid-form');
+  var avatarRow = document.getElementById('avatar-row');
+  var kidStatusEl = document.getElementById('kid-status');
+  var AVATAR_CHOICES = ['🦊', '🐱', '🐶', '🐰', '🐼', '🦉', '🐸', '🐢'];
+  var pendingAvatar = null;
+
+  function kidStatus(text) { kidStatusEl.textContent = text; }
+
+  function renderAvatarRow() {
+    avatarRow.innerHTML = '';
+    pendingAvatar = null;
+    AVATAR_CHOICES.forEach(function (a) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'avatar-btn';
+      btn.textContent = a;
+      btn.addEventListener('click', function () {
+        pendingAvatar = a;
+        Array.prototype.slice.call(avatarRow.querySelectorAll('.avatar-btn')).forEach(function (b) {
+          b.classList.remove('active');
+        });
+        btn.classList.add('active');
+      });
+      avatarRow.appendChild(btn);
+    });
+  }
+
+  function renderKidRow(kids) {
+    kidRow.innerHTML = '';
+    kids.forEach(function (k) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'species-btn';
+      var emoji = document.createElement('span');
+      emoji.className = 'emoji';
+      emoji.textContent = k.avatar || '🙂';
+      btn.appendChild(emoji);
+      btn.appendChild(document.createTextNode(' ' + k.displayName));
+      btn.addEventListener('click', function () { claimKid(k.id); });
+      kidRow.appendChild(btn);
+    });
+  }
+
+  async function showKidPicker() {
+    setUiScreen('kid-picker');
+    kidStatus('Loading…');
+    renderAvatarRow();
+    try {
+      var data = await api('/api/kids');
+      renderKidRow(data.kids);
+      kidStatus('');
+    } catch (err) {
+      kidStatus('Could not load the family — check the connection and try again.');
+    }
+  }
+
+  async function claimKid(kidId) {
+    kidStatus('One sec…');
+    try {
+      await api('/api/kids/' + kidId + '/claim', { method: 'POST', body: {} });
+      device.kidId = kidId;
+      saveDevice();
+      boot();
+    } catch (err) {
+      kidStatus('Could not claim that profile — try again.');
+    }
+  }
+
+  newKidForm.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    var nameInput = document.getElementById('new-kid-name');
+    var name = nameInput.value.trim();
+    if (!name) return;
+    if (!pendingAvatar) { kidStatus('Pick a picture for yourself first!'); return; }
+    kidStatus('Adding you…');
+    try {
+      var kid = await api('/api/kids', { method: 'POST', body: { displayName: name, avatar: pendingAvatar } });
+      nameInput.value = '';
+      await claimKid(kid.id);
+    } catch (err) {
+      kidStatus('Could not add you — try again.');
+    }
+  });
+
+  // --- Pet resolution + sync polling -----------------------------------------
+
+  var syncPollTimer = null;
+
+  // Adopts a server pet's state as ours. Deliberately does not touch
+  // state.name — the server has no rename endpoint yet (SPEC.md §9 Step
+  // 10), so renaming stays a local cosmetic override rather than getting
+  // stomped back to whatever was sent at pet-creation time on every poll.
+  function applyServerPet(p) {
+    state.species = p.species;
+    state.colorVariant = p.colorVariant || 'base';
+    if (!state.name && p.name) state.name = p.name;
+    state.hunger = p.hunger;
+    state.happiness = p.happiness;
+    state.energy = p.energy;
+    state.cleanliness = p.cleanliness;
+    state.sleeping = p.sleeping;
+    state.lastUpdated = p.lastUpdated;
+    saveState();
+  }
+
+  async function createServerPet(species, colorVariant, name) {
+    try {
+      var data = await api('/api/pets', {
+        method: 'POST',
+        body: { species: species, colorVariant: colorVariant, name: name }
+      });
+      device.petId = data.pet.id;
+      saveDevice();
+      applyServerPet(data.pet);
+      startSyncedApp();
+    } catch (err) {
+      // Creation only fails on a real backend problem (already has a pet,
+      // network down, etc) — send them back to the picker rather than
+      // stranding them on a blank screen.
+      setUiScreen('species-picker');
+    }
+  }
+
+  // Looks for a pet this kid already owns server-side; if none exists,
+  // either migrates the locally-raised pet in (a device that had a
+  // localStorage-only pet before connecting to the family) or falls
+  // through to the species picker for a brand-new pet.
+  async function resolveOrCreatePet() {
+    var data;
+    try {
+      data = await api('/api/pets');
+    } catch (err) {
+      // Can't reach the server right now — keep playing locally; boot()
+      // re-tries the real sync path next launch (or next connect tap).
+      setUiScreen('app-body');
+      startLocalTick();
+      return;
+    }
+    var mine = data.pets.filter(function (p) { return p.kidId === device.kidId; })[0];
+    if (mine) {
+      device.petId = mine.id;
+      saveDevice();
+      applyServerPet(mine);
+      startSyncedApp();
+      return;
+    }
+    if (state.species) {
+      await createServerPet(state.species, state.colorVariant, state.name);
+      return;
+    }
+    setUiScreen('species-picker');
+  }
+
+  function startSyncedApp() {
+    // A device that was playing offline before connecting to the family
+    // (see boot()'s "pre-existing local-only pet" branch) may already have
+    // a local decay timer running — the server poll below replaces it as
+    // the single source of truth, so stop double-ticking.
+    stopLocalTick();
+    setUiScreen('app-body');
+    render();
+    scheduleSyncPoll();
+  }
+
+  function scheduleSyncPoll() {
+    clearInterval(syncPollTimer);
+    syncPollTimer = setInterval(function () {
+      if (document.visibilityState === 'visible') pollPet();
+    }, 5000);
+  }
+
+  async function pollPet() {
+    if (!device.petId) return;
+    try {
+      var data = await api('/api/pets/' + device.petId);
+      applyServerPet(data.pet);
+      render();
+    } catch (err) {
+      // Offline or a transient failure — keep showing the last-known
+      // (cached) state; the next successful poll reconciles it.
+    }
+  }
+
+  // --- Sibling visit screen ---------------------------------------------------
+
+  var siblingList = document.getElementById('sibling-list');
+  var siblingDetail = document.getElementById('sibling-detail');
+  var helperStatusEl = document.getElementById('helper-status');
+  var currentVisitPetId = null;
+  var currentVisitLabel = '';
+  var visitPollTimer = null;
+
+  function helperStatus(text) { helperStatusEl.textContent = text; }
+
+  // Renders a compact read-only card for either pet in the side-by-side
+  // visit view. Deliberately skips the color-variant recolor (see
+  // resolveDisplaySrc above) to keep sibling rendering synchronous and
+  // simple — a sibling's pet still reads fine in its base colors.
+  function renderMiniPet(container, p, label) {
+    var mood = getMood(p);
+    var art = resolvePose(p.species, MOOD_POSES[mood] || 'idle');
+    container.innerHTML = '';
+    var img = document.createElement('img');
+    img.className = 'mini-pet-sprite';
+    img.alt = label;
+    if (art.src) img.src = art.src;
+    container.appendChild(img);
+    var nameEl = document.createElement('div');
+    nameEl.className = 'mini-pet-name';
+    nameEl.textContent = p.name || label;
+    container.appendChild(nameEl);
+    var statsEl = document.createElement('div');
+    statsEl.className = 'mini-pet-stats';
+    statsEl.textContent = '🍎' + Math.round(p.hunger) + ' 😊' + Math.round(p.happiness) +
+      ' ⚡' + Math.round(p.energy) + ' 🧼' + Math.round(p.cleanliness);
+    container.appendChild(statsEl);
+  }
+
+  function renderSiblingList(siblings, kidsById) {
+    siblingList.innerHTML = '';
+    siblingDetail.style.display = 'none';
+    if (!siblings.length) {
+      var empty = document.createElement('p');
+      empty.className = 'picker-hint';
+      empty.textContent = 'No sibling pets yet.';
+      siblingList.appendChild(empty);
+      return;
+    }
+    siblings.forEach(function (p) {
+      var kid = kidsById[p.kidId];
+      var label = (kid && kid.displayName) || 'Sibling';
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'species-btn';
+      var emoji = document.createElement('span');
+      emoji.className = 'emoji';
+      emoji.textContent = (kid && kid.avatar) || '🐾';
+      btn.appendChild(emoji);
+      btn.appendChild(document.createTextNode(' ' + label));
+      btn.addEventListener('click', function () {
+        currentVisitLabel = label;
+        openSiblingDetail(p);
+      });
+      siblingList.appendChild(btn);
+    });
+  }
+
+  async function showSiblingVisit() {
+    setUiScreen('sibling-visit');
+    siblingList.textContent = 'Loading…';
+    siblingDetail.style.display = 'none';
+    try {
+      var petsData = await api('/api/pets');
+      var kidsData = await api('/api/kids');
+      var kidsById = {};
+      kidsData.kids.forEach(function (k) { kidsById[k.id] = k; });
+      var siblings = petsData.pets.filter(function (p) { return p.kidId !== device.kidId; });
+      renderSiblingList(siblings, kidsById);
+    } catch (err) {
+      siblingList.textContent = 'Could not load the family — check the connection.';
+    }
+  }
+
+  function openSiblingDetail(pet) {
+    currentVisitPetId = pet.id;
+    siblingDetail.style.display = 'block';
+    helperStatus('');
+    renderMiniPet(document.getElementById('my-mini-pet'), state, state.name || 'You');
+    renderMiniPet(document.getElementById('sibling-mini-pet'), pet, currentVisitLabel);
+    clearInterval(visitPollTimer);
+    visitPollTimer = setInterval(refreshVisitPet, 5000);
+  }
+
+  async function refreshVisitPet() {
+    if (!currentVisitPetId || uiScreen !== 'sibling-visit') {
+      clearInterval(visitPollTimer);
+      return;
+    }
+    try {
+      var data = await api('/api/pets/' + currentVisitPetId);
+      renderMiniPet(document.getElementById('sibling-mini-pet'), data.pet, currentVisitLabel);
+    } catch (err) {
+      // Keep showing the last-known card; next poll reconciles it.
+    }
+  }
+
+  async function doHelperAction(action) {
+    if (!currentVisitPetId) return;
+    helperStatus('…');
+    try {
+      var data = await api('/api/pets/' + currentVisitPetId + '/action', {
+        method: 'POST',
+        body: { action: action }
+      });
+      renderMiniPet(document.getElementById('sibling-mini-pet'), data.pet, currentVisitLabel);
+      helperStatus('Done! Thanks for helping. 🎉');
+    } catch (err) {
+      helperStatus(err.status === 429
+        ? 'Already helped with this pet today — come back tomorrow!'
+        : 'Could not do that right now.');
+    }
+  }
+
+  document.getElementById('btn-helper-feed').addEventListener('click', function () { doHelperAction('feed'); });
+  document.getElementById('btn-helper-play').addEventListener('click', function () { doHelperAction('play'); });
+
+  document.getElementById('visit-back').addEventListener('click', function () {
+    clearInterval(visitPollTimer);
+    currentVisitPetId = null;
+    setUiScreen('app-body');
+    render();
+  });
+
+  btnVisit.addEventListener('click', function () { showSiblingVisit(); });
+
+  // --- Boot -------------------------------------------------------------------
+  //
+  // Picks the right screen for this device's current sync state. Every
+  // sync-flow handler above ends by calling boot() again rather than
+  // hand-rolling the next transition, so this is the single place that
+  // decides what "next" means.
+  function boot() {
+    if (!device.token) {
+      if (state.species) {
+        // Pre-existing local-only pet — keep it working exactly as before;
+        // syncing in is an opt-in tap on the 🔗 button, never forced.
+        setUiScreen('app-body');
+        startLocalTick();
+      } else {
+        setUiScreen('family-setup');
+      }
+      return;
+    }
+    if (!device.kidId) {
+      showKidPicker();
+      return;
+    }
+    resolveOrCreatePet();
+  }
+
+  boot();
 })();
 </script>
 </body>
