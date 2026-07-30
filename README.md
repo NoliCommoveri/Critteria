@@ -2,7 +2,7 @@
 
 A Tamagotchi-style virtual pet for four siblings (and, later, invited
 friends), built as a web app / PWA and hosted at
-[pet.immotus.app](https://pet.immotus.app).
+[critteria.immotus.app](https://critteria.immotus.app).
 
 ## Layout
 
