@@ -1,0 +1,12 @@
+name = "critteria"
+main = "./dist/worker/index.js"
+compatibility_date = "2026-07-30"
+
+[assets]
+directory = "./"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "critteria"
+database_id = "12fe0a08-9d2b-4a68-bde5-a8729de8d916"

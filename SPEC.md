@@ -14,21 +14,19 @@ A Tamagotchi-style virtual pet app for four siblings, built as a web app/PWA
   while the tablet is closed.
 - Actions: Feed, Play, Clean, Sleep.
 - Species picker: real AI-generated pixel-art stills for T-Rex, unicorn,
-  pegasus, hippocampus, phoenix, griffin, and dragon (`assets/`); slime/blob is
-  still placeholder SVG art — see Art pipeline below. Species is chosen
-  once at first launch and then locked for that pet — see Species selection
-  below. T-Rex, unicorn, dragon, hippocampus, pegasus, and wolf are the
-  kept roster (all six conform to the Art pipeline rules below; wolf's
-  four poses exist on disk but aren't wired into `SPECIES_POSES` or the
-  picker yet — Phase 2, §8); phoenix, griffin, and slime/blob are legacy
-  placeholders slated for removal, not yet acted on.
+  dragon, hippocampus, pegasus, and wolf (`assets/`) — see Art pipeline
+  below. Species is chosen once at first launch and then locked for that
+  pet — see Species selection below. This is the full kept roster (all six
+  conform to the Art pipeline rules below); phoenix, griffin, and
+  slime/blob were legacy placeholders and have been removed from the
+  picker, `SPECIES_POSES`, and (for phoenix/griffin) the asset files
+  themselves.
 - Mood- and action-driven **pose swapping**: the renderer picks a distinct
   drawn sprite per state (idle/happy/sad/sleep + eat/eat-chew/play/bath) from
   the `SPECIES_POSES` manifest, falling back to `idle` for any pose not yet
-  drawn — see Art pipeline below. The kept species (excluding wolf until it
-  is wired in) each have all four required poses (idle/happy/sad/sleep);
-  action poses (eat/eat-chew/play/bath) are still unbuilt for all of them,
-  so the fallback chain does that work.
+  drawn — see Art pipeline below. Every kept species has all four required
+  poses (idle/happy/sad/sleep); action poses (eat/eat-chew/play/bath) are
+  still unbuilt for all of them, so the fallback chain does that work.
 - `localStorage` persistence.
 
 Everything below is the target end-state, to be built in phases on top of
@@ -355,18 +353,18 @@ parallel. Both are keepers.
 poses (idle/happy/sad/sleep, 128×128, shared ground line, hue-shifted
 outline) exist on disk, with `reference/wolf-palette.txt`/`.png` holding
 the locked ramp and `reference/wolf-reference-4x.png` holding all four
-poses (4x) for attaching when its action poses are generated next. Not yet
-wired into `SPECIES_POSES` or the picker — that wiring is one of the
-remaining Phase 2 tasks (§8).
+poses (4x) for attaching when its action poses are generated next. Wired
+into `SPECIES_POSES` and the picker.
 
 The roster is therefore **T-Rex, unicorn, dragon, hippocampus, pegasus,
 and wolf**, all six at the required four-pose tier. `griffin`, `phoenix`,
-and `slime/blob` are the ones being dropped: griffin and phoenix predate
-these rules — 471–640px, anti-aliased, gradient-shaded, and inconsistent
-in camera angle (the griffin painterly ¾, formerly the unicorn full side)
-— and won't be re-cut; blob is the placeholder SVG that predates the
-pixel-art pipeline entirely. That removal (species picker,
-`SPECIES_POSES`, and the asset files themselves) hasn't been done yet.
+and `slime/blob` were dropped: griffin and phoenix predated these rules —
+471–640px, anti-aliased, gradient-shaded, and inconsistent in camera angle
+(the griffin painterly ¾, formerly the unicorn full side) — and weren't
+re-cut; blob was the placeholder SVG that predated the pixel-art pipeline
+entirely. That removal (species picker, `SPECIES_POSES`, and the asset
+files themselves for phoenix/griffin; the inline SVG markup, CSS, and JS
+branch for blob) is done.
 
 ### Cleanup pass for generated art
 
@@ -730,15 +728,14 @@ enforces the once-a-day rate limit via `helper_action_usage`
    persistence — this is `index.html` today.
 2. **Real art (in progress)**: pose-swapping renderer and fallback chain
    are built, and six species (T-Rex, unicorn, dragon, hippocampus,
-   pegasus, wolf) each have all four required poses (idle/happy/sad/sleep)
-   plus palette-remap color variants. Remaining: wire wolf into
-   `SPECIES_POSES` + the picker (its sprites and palette/reference files
-   are on disk, just not referenced by the manifest yet); drop
-   phoenix/griffin/blob from the picker; draw the four action poses (eat,
-   eat-chew, play, bath) per species and the three shared item sprites
-   (apple, soap, ball); build the travelling-item choreography and the
-   shake/bounce CSS loops (no art dependency for the choreography
-   itself).
+   pegasus, wolf) each have all four required poses (idle/happy/sad/sleep),
+   wired into `SPECIES_POSES` and the picker; palette-remap color variants
+   exist for five of the six (all but wolf). Phoenix/griffin/blob are
+   dropped from the picker, `SPECIES_POSES`, and (phoenix/griffin) the
+   asset files. Remaining: draw the four action poses (eat, eat-chew,
+   play, bath) per species and the three shared item sprites (apple, soap,
+   ball); build the travelling-item choreography and the shake/bounce CSS
+   loops (no art dependency for the choreography itself).
 3. **Backend + Social v1 (next)**: Cloudflare Workers with `[assets]`
    binding + D1. `SIGNUP_SECRET`-gated family creation + pairing-code kid
    device pairing (§7). Server-side pet state with lazy decay, polling
