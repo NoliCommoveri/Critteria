@@ -665,7 +665,7 @@ the same shape as a `SPECIES_POSES` registration.
   internally with their own species' poses.
   `reference/dragon-egg-reference-4x.png` holds all four hatch frames (4x)
   for attaching when generating dragon's action poses next.
-- 🟨 Hippocampus — **frame 1 of 4 drawn**, plan for the rest in
+- 🟨 Hippocampus — **frames 1–2 of 4 drawn**, plan for the rest in
   "Hippocampus hatch sequence (planned)" below. Departs from the other
   two in that it isn't an egg at all: a mussel shell on the seabed that
   opens to reveal the baby. Everything else about the sequence — beat
@@ -693,10 +693,37 @@ the same shape as a `SPECIES_POSES` registration.
   fragmented-highlight shape dragon hit), where the re-roll's is a single
   connected 11px cluster needing no hand repair.
 
-  `reference/hippocampus-egg-reference-4x.png` holds frame 1 at 4× for
-  attaching when generating frames 2–4. Unlike dragon's hatch reference
-  it sits on flat `#FF00FF` rather than a dark backdrop, so it doubles as
-  a demonstration of the background the next generation must produce.
+  `hippocampus-egg-crack1.png` (shell parted by a sliver, glow along the
+  lip) followed, generated with frame 1 attached. Registration held
+  exactly: the shell box is x 12–115, 104px wide, **identical** to frame
+  1, with the top edge 2px higher — the lid lifting, which is the point.
+  The raw generation drifted +2.4% in shell width and +0.6% in
+  sand/shell ratio, both normalized away by scaling to the 103px anchor.
+
+  This frame forced a fix to the crop step worth keeping. Frame 1 centred
+  the *composite* bounding box on the canvas, which was fine when the
+  sand and shell were the same width. Frame 2 has bubbles detached from
+  the shell out to its left, so composite-centring would have shoved the
+  shell right by half the bubbles' overhang — silent drift of exactly the
+  kind that makes the sequence read as a pan. The crop now anchors
+  explicitly on **the shell's centre → canvas x 64, and the sand's bottom
+  → row 116**, with everything else free to extend where it likes. Frames
+  3–4 need this even more, since an open lid and a hatchling both grow
+  the composite asymmetrically.
+
+  The bubbles were **stripped rather than kept**, per the same rule §5
+  states for food and soap: items are separate files, never drawn into a
+  pose. Baked-in bubbles would shake with the shell and sit frozen for
+  the frame's full 3.2s, when what the sequence wants is bubbles rising
+  independently of the shake. Detecting them is easy — they are connected
+  components disjoint from the main silhouette — so the cleanup script
+  drops every component but the largest.
+
+  `reference/hippocampus-egg-reference-4x.png` holds both frames so far
+  at 4× (1024×512) for attaching when generating frames 3–4. Unlike
+  dragon's hatch reference it sits on flat `#FF00FF` rather than a dark
+  backdrop, so it doubles as a demonstration of the background the next
+  generation must produce.
 - ⬜ Unicorn, pegasus, wolf — no hatch art yet; picking these species
   still skips straight to instant pet creation. Remaining work is
   art-only (four frames each), no further code changes needed beyond
