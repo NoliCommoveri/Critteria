@@ -1,17 +1,20 @@
-# Immotus Virtual Pet — Spec
+# Critteria — Spec
 
 A Tamagotchi-style virtual pet app for four siblings, built as a web app/PWA
-(Silk browser on Fire tablets), backed by Cloudflare.
+(Silk browser on Fire tablets), served from a Cloudflare Worker at
+`critteria.immotus.app`. Formerly the `pet/` directory of
+`NoliCommoveri/site`; extracted to its own repo on 2026-07-30 via
+`git subtree split -P pet`, so pre-split history lives on `main`.
 
 ## 1. Current prototype
 
-`pet/index.html` is a working local-only prototype:
+`index.html` is a working local-only prototype:
 - Stats (hunger, happiness, energy, cleanliness) decay based on real elapsed
   time (computed from a stored timestamp), so the pet keeps "aging" even
   while the tablet is closed.
 - Actions: Feed, Play, Clean, Sleep.
 - Species picker: real AI-generated pixel-art stills for T-Rex, unicorn,
-  pegasus, hippocampus, phoenix, griffin, and dragon (`pet/assets/`); slime/blob is
+  pegasus, hippocampus, phoenix, griffin, and dragon (`assets/`); slime/blob is
   still placeholder SVG art — see Art pipeline below. Species is chosen
   once at first launch and then locked for that pet — see Species selection
   below. T-Rex, unicorn, dragon, hippocampus, and pegasus are the kept
@@ -32,36 +35,87 @@ this prototype.
 
 ```
 [Fire tablet Silk browser / PWA]
-        |  fetch + WebSocket
+        |  fetch (poll every ~5s while foregrounded)
         v
-[Cloudflare Pages]  --serves-->  static PWA (HTML/CSS/JS, service worker)
-        |
-        v
-[Cloudflare Workers]  --API layer-->
-        |-- D1 (SQLite)      → family, kids, pets, items, locations, visit log
-        |-- Durable Objects  → one per pet: authoritative live state + WebSocket fanout for visits
-        |-- KV (optional)    → session tokens / family passcode lookup
-        |-- Web Push (opt.)  → "your pet is hungry" notifications
+[Cloudflare Worker on critteria.immotus.app]
+        |-- [assets] binding → serves index.html, assets/, sw.js
+        |-- functions/api/*  → API routes bundled into dist/worker/index.js
+        |-- [[d1_databases]] → D1 (SQLite): families, kids, devices, pets,
+                                pet_events, helper_action_usage, catalog
 ```
 
-Each pet's Durable Object is the single authoritative owner of that pet's
-live state (stats, equipped items, location, stage) and the thing that
-broadcasts changes to anyone currently visiting. D1 holds everything that
-doesn't need real-time locking.
+One Worker serves the PWA and the API from the same origin — no CORS, no
+separate `api.*` subdomain. Deploys are git-connected to `main`; every push
+rebuilds and redeploys automatically. Deployment mechanics and every
+Cloudflare gotcha we've hit are in §9.
+
+Adapted from `NoliCommoveri/Star-homeschool`, which is running the same
+architecture — see its `docs/parent-sync-spec.md` for the reasoning-in-full.
+The chosen shape is deliberately smaller than an earlier draft of this spec,
+which called for Cloudflare Pages + Durable Objects + WebSocket fanout + KV
++ Web Push. That draft is superseded — see the **Deferred** note below for
+what it becomes instead.
+
+**Deferred to a later phase**: Durable Objects (per-pet authoritative live
+state) and WebSocket fanout are the target end-state for real-time co-play,
+but polling reads with last-write-wins on D1 are more than enough for a
+family taking turns caring for each other's pets. If polling latency ever
+bothers anyone, upgrading to DO + WebSocket is a transport change, not a
+data-model change. Also deferred: KV (not needed — tokens live in the
+`devices` table) and Web Push (nice-to-have; §8 Phase 5).
+
+Cloudflare **Pages** is not part of this — it was folded into Workers
+entirely, and "Pages project" in older writing (including earlier drafts of
+this file) now just means "Worker with `[assets]` binding."
 
 ## 3. Data model (D1)
 
-- `families` — id, passcode_hash, name
-- `kids` — id, family_id, display_name, avatar, pin
-- `pets` — id, kid_id, species, color_variant, stage, created_at,
-  total_care_points, current_location_id, durable_object_id
-- `pet_equipped_items` — pet_id, slot, item_id
+Only one family exists per deployment — creating a family requires the
+`SIGNUP_SECRET` env var (§7, §9 Step 7). Additional kid devices are paired
+via short-lived 6-char codes (single-use). Auth model is adapted from
+`NoliCommoveri/Star-homeschool` `docs/parent-sync-spec.md §6`.
+
+Live tables (v1):
+
+- `families` — id (128-bit random hex, never derived), created_at.
+- `kids` — id, family_id, display_name, avatar (preset key or emoji),
+  pin_hash (SHA-256 of 4-digit PIN + kid_id salt; nullable in v1),
+  created_at.
+- `devices` — id (client-generated UUID, stable across re-pairing),
+  family_id, kid_id (null until claimed by a kid at first-run),
+  token_hash (SHA-256; raw token never stored; token rotates while id
+  does not), label ("Ana's tablet"), created_at, last_seen, revoked.
+- `pairing_codes` — code_hash (SHA-256 of 6-char code), family_id,
+  expires_at (5-min TTL), used_at (non-null once redeemed; single use).
+- `pets` — id, kid_id (one pet per kid, UNIQUE), species, color_variant,
+  name, stage, created_at, hunger, happiness, energy, cleanliness,
+  sleeping, last_updated (server epoch ms; **decay is computed lazily on
+  every read/write**, same pattern as the current `localStorage`
+  prototype's `applyDecay` — see `index.html`).
+- `pet_events` — id (autoincrement), pet_id, actor_kid_id, action
+  (`feed`/`play`/`clean`/`sleep`/`wake`/`visit`/`gift`), occurred_at,
+  detail (optional JSON — gift contents etc.). Append-only; doubles as
+  audit trail, visit history, and presence signal (any event by a
+  device within the last ~30 s = "currently visiting"). `visits` from
+  an earlier draft is dropped — presence and visit history come out of
+  `pet_events` alone, saving a second write per session.
+- `helper_action_usage` — visitor_kid_id, host_pet_id, action, utc_day
+  ('YYYY-MM-DD'), used_at. **Primary key across all four** so a single
+  `INSERT OR ABORT` either succeeds or fails on the daily rate limit
+  with no race window — do not use `INSERT OR IGNORE`, which would
+  silently succeed on the duplicate and let the helper action run.
+
+Deferred tables (Phase 5, §8) — kept in the schema so a future
+migration doesn't need to reshape any of the above:
+
+- `pet_equipped_items` — pet_id, slot, item_id.
 - `items` (catalog) — id, slot (head/neck/back/…), name, image_asset,
-  species_compatibility, unlock_type
-- `locations` (catalog) — id, name, image_asset, unlock_type
-- `pet_events` — id, pet_id, actor_kid_id, action, timestamp (append-only
-  log; doubles as audit trail and visit history)
-- `visits` — id, visitor_kid_id, host_pet_id, started_at, ended_at
+  species_compat (JSON array), unlock_type (points/streak/gift).
+- `locations` (catalog) — id, name, image_asset, unlock_type.
+- `pet_current_location` — pet_id, location_id.
+
+The concrete `CREATE TABLE` statements are inlined in §9 Step 5 so they
+can be dropped straight into `schema.sql`.
 
 ## 4. Art pipeline
 
@@ -408,7 +462,7 @@ these should read as gentle, not as combat feedback.
 
 ### Fallback chain
 
-`SPECIES_POSES` in `pet/index.html` lists only files that exist. Anything
+`SPECIES_POSES` in `index.html` lists only files that exist. Anything
 missing walks `POSE_FALLBACK` until it reaches `idle`, which is the one pose
 a species may not ship without:
 
@@ -444,7 +498,7 @@ Instead, treat a cleaned `idle` as canonical and **attach it as a reference
 image, requesting 1–2 poses per call**, stating explicitly that canvas, scale,
 and ground line must match the reference.
 
-Attach `pet/assets/reference/trex-reference-4x.png`, not the 128×128 asset —
+Attach `assets/reference/trex-reference-4x.png`, not the 128×128 asset —
 it's the same two poses at 4× nearest-neighbour (1024×512), so the pixel grid
 is unambiguous to the generator and both poses together demonstrate what
 "same character, same ground line" means. `reference/` holds generation aids
@@ -466,12 +520,12 @@ Also:
 ### Adding a pose
 
 1. Draw/generate it to the style constraints above; save as
-   `pet/assets/<species>-<pose>.png`. (`idle` keeps the bare
-   `pet/assets/<species>.png` name it shipped with.)
-2. Add the one-line entry to `SPECIES_POSES` in `pet/index.html`. The
+   `assets/<species>-<pose>.png`. (`idle` keeps the bare
+   `assets/<species>.png` name it shipped with.)
+2. Add the one-line entry to `SPECIES_POSES` in `index.html`. The
    manifest is explicit on purpose — deriving paths by convention would 404
    into a broken-image icon for every pose not yet drawn.
-3. Check it with `pet/index.html?pose=<pose>`, which pins that pose and its
+3. Check it with `index.html?pose=<pose>`, which pins that pose and its
    mood so the art can be reviewed without starving the pet into the state.
 
 Sprites ≤128px wide automatically get `image-rendering: pixelated` on load,
@@ -508,7 +562,7 @@ may find punishing/confusing at first.
 
 ### Species selection
 Species is picked once, at first launch, and then locked for the life of
-that pet — `pet/index.html` shows a dedicated "Choose your pet!" screen
+that pet — `index.html` shows a dedicated "Choose your pet!" screen
 when no species is stored yet, and once one is picked the picker is hidden
 and the choice is written to `localStorage` (and later, `pets.species` in
 D1) permanently. Kids don't get a species switcher in the main app.
@@ -580,27 +634,520 @@ deferred until the core loop and the polling-based visit view are solid.
 
 ## 7. Identity/auth
 
-No email/password. Kid picks their avatar from the family's kid icons, then
-a 4-digit PIN (or skipped entirely if the tablet is already locked to one
-Fire OS kid profile). Family-level passcode gates the Worker API.
+No email/password. Adapted from `NoliCommoveri/Star-homeschool`
+`docs/parent-sync-spec.md §5–6.5`.
+
+**Family creation** — one-time, gated by the `SIGNUP_SECRET` env var (a
+long random string you paste into the Cloudflare dashboard's Variables &
+Secrets tab, §9 Step 7). The setup flow POSTs to `/api/family` with
+`{signupSecret, deviceId, label}` and gets back a device token. This is
+what keeps the deployment serving exactly one family — without it, anyone
+who could hit `/api/family` could spawn their own family in your D1.
+
+**Additional device pairing** — an already-paired device calls
+`/api/pairing-code` to mint a short-lived 6-char code (5-min TTL,
+single-use); the new device POSTs to `/api/pair` with the code and
+receives its own device token. No secret involved — the code *is* the
+secret, briefly. Same mechanism a kid uses to add their second tablet or
+a friend joining later (see also §5 "friends" note).
+
+**Per-request auth** — every non-`/api/family` and non-`/api/pair`
+request carries `Authorization: Bearer <device-token>`. The Worker
+hashes the token, looks it up in `devices`, checks `revoked = 0`, and
+updates `last_seen`. A device inherits its family membership from its
+row; a device claims a kid identity by POSTing to
+`/api/kids/:id/claim` at first-run — this is where the kid picks their
+avatar. PIN is client-side only in v1 — the server treats device tokens
+as authoritative — but the schema keeps `pin_hash` so a "must PIN before
+you can act on your pet" gate can land later without a migration.
+
+**Family-scope check on every write** — the Worker looks up the target
+pet's `kid_id → family_id` and confirms it matches the acting device's
+`family_id`. For helper actions on a sibling's pet, it additionally
+enforces the once-a-day rate limit via `helper_action_usage`
+(`INSERT OR ABORT` on the composite PK does the work, §3).
 
 ## 8. Build phases
 
-1. **MVP (in progress)**: single pet, stats/mood engine, species picker,
-   local persistence — this is `pet/index.html` today.
-2. **Real art (in progress)**: pose-swapping renderer and fallback chain are
-   built. Remaining, in order: commit the shared palette; draw the four
-   required poses per species (`sleep` first — it's the one whose absence is
-   currently most obvious); build the travelling-item choreography and the
-   shake/bounce loops (CSS, no art dependency); draw the four action poses
-   including the `eat-chew` second frame and the three shared item sprites;
-   then re-cut the six placeholder stills to 64×64 so the whole set conforms
-   to §4.
-3. **Cloudflare backend**: Workers + D1 + Durable Objects, family/kid
-   profiles, passcode auth, cross-device sync.
-4. **Social v1**: read-only visiting, once-daily helper actions, gifting,
-   presence badges.
-5. **End-state features**: lifecycles/aging, accessories, locations, color
-   variants, polling-based simultaneous two-pet visit view.
-6. **Nice-to-haves**: WebSocket live co-visit, push notifications,
-   mini-games, guestbook/stickers, family (non-competitive) garden score.
+1. **MVP (done)**: single pet, stats/mood engine, species picker, local
+   persistence — this is `index.html` today.
+2. **Real art (in progress)**: pose-swapping renderer and fallback chain
+   are built, and five species (T-Rex, unicorn, dragon, hippocampus,
+   pegasus) each have all four required poses (idle/happy/sad/sleep) plus
+   palette-remap color variants. Remaining: wire the completed wolf
+   sprites into `SPECIES_POSES` + the picker; drop phoenix/griffin/blob
+   from the picker; draw the four action poses (eat, eat-chew, play,
+   bath) per species and the three shared item sprites (apple, soap,
+   ball); build the travelling-item choreography and the shake/bounce
+   CSS loops (no art dependency for the choreography itself).
+3. **Backend + Social v1 (next)**: Cloudflare Workers with `[assets]`
+   binding + D1. `SIGNUP_SECRET`-gated family creation + pairing-code kid
+   device pairing (§7). Server-side pet state with lazy decay, polling
+   reads at ~5 s while foregrounded. Read-only sibling visits, once-a-day
+   helper actions on a sibling's pet, gifting, presence badge derived
+   from `pet_events`. Concrete deploy recipe and every gotcha we've hit
+   are in §9.
+4. **End-state features**: lifecycles/aging, accessories, locations
+   (color variants already landed on `main` as palette-remap work).
+5. **Nice-to-haves**: Durable Objects + WebSocket for live co-visit
+   (transport upgrade over the polling shape in §2, no data-model
+   change), push notifications, mini-games, guestbook/stickers, family
+   (non-competitive) garden score.
+
+## 9. Backend deployment (Cloudflare Workers + D1)
+
+Written to be followed without prior Cloudflare knowledge. Adapted from
+`NoliCommoveri/Star-homeschool` `docs/parent-sync-spec.md §12` — that
+document is the canonical explanation of *why* each step is shaped the
+way it is; this section is the concrete recipe for Critteria and the
+gotchas we've either hit ourselves or inherited from star.
+
+**Cloudflare moves its dashboard around.** Pages has been folded into
+Workers entirely, so "Pages project" in older writing (including earlier
+drafts of this file) now just means "Worker." Each step below states
+*what you are accomplishing* and matches on that goal, not on dashboard
+menu names that might have changed by the time you read this.
+
+This touches the repo beyond app files: `wrangler.toml`, `.assetsignore`,
+`schema.sql`, `functions/api/*`, and a committed `dist/worker/index.js`
+build output. None of it changes behavior when the API isn't reachable —
+the app runs on `localStorage` alone, identical to today.
+
+### File layout (target)
+
+```
+index.html               Frontend PWA (existing).
+assets/                  Sprites, palettes, reference art (existing).
+sw.js                    (planned) Service worker for PWA install/offline.
+wrangler.toml            Worker config: [assets] + [[d1_databases]].
+.assetsignore            What NOT to upload as public static assets.
+schema.sql               D1 schema (see Step 5 for the full contents).
+functions/api/           Pages-Functions-style API handlers:
+  family.js              POST — create family (SIGNUP_SECRET-gated).
+  pairing-code.js        POST — mint a pairing code (auth'd).
+  pair.js                POST — redeem a pairing code, get device token.
+  kids.js                GET, POST — list/create kids.
+  kids/[id].js           PATCH — update kid profile.
+  kids/[id]/claim.js     POST — bind current device to a kid.
+  devices.js             GET — list family's devices.
+  devices/[id].js        DELETE — revoke a device.
+  pets.js                GET, POST — list/create pets in family.
+  pets/[id].js           GET — server-computed pet state (lazy decay).
+  pets/[id]/action.js    POST — feed/play/clean/sleep/wake (own pet
+                         always; sibling pet gated by helper_action_usage).
+  pets/[id]/gift.js      POST — send a gift (writes pet_events).
+  pets/[id]/events.js    GET — recent events (presence + short history).
+dist/worker/index.js     Bundled Worker script. Committed because
+                         Cloudflare's git-connected deploy does NOT run
+                         the bundler on its side.
+```
+
+### Step 1 — Cloudflare account
+
+Sign up at dash.cloudflare.com. Free plan, no credit card. You do not
+need to buy a domain or move DNS anywhere.
+
+*Checkpoint:* you can see a dashboard with **Workers & Pages** in the
+sidebar.
+
+### Step 2 — Connect the repo (done)
+
+Workers & Pages → Create → connect to Git → authorize GitHub → pick
+`NoliCommoveri/Critteria`, branch `main`. There is no separate "Pages"
+option anymore — connecting a repo always creates a Worker.
+
+Until `wrangler.toml` exists (Step 6 below), Cloudflare deploys the repo
+as static-assets-only (no server code), which is fine — that's the state
+Critteria is in as of this section being written. All of a git-connected
+Worker's config (what to serve as static assets, what script to run,
+what it's bound to) comes from `wrangler.toml`; the dashboard has no
+build-output-directory field or D1-binding UI for a git-connected
+project.
+
+*Checkpoint:* the site at `critteria.<your-subdomain>.workers.dev`
+(dashboard → **Visit**) loads `index.html` and the pet works exactly as
+it does on localhost. **Test this before continuing** — this is the
+moment hosting moves off whatever host it was on.
+
+### Step 3 — Custom domain (done)
+
+Worker → Domains & Routes → **Add** → `critteria.immotus.app`. If your
+domain is already in Cloudflare, DNS is one click; otherwise the
+dashboard walks you through the CNAME.
+
+The site loads at `critteria.immotus.app` today via this route, serving
+the repo as static assets. A GitHub Pages `CNAME` file briefly lived at
+the repo root for a never-realized GH Pages hosting path — it was
+removed in commit `5d2f157`, along with the README section that
+described GH Pages as the host. GitHub's "DNS check successful" +
+"Enforce HTTPS unavailable" state on that repo is inert zombie config
+and can be ignored (or GH Pages disabled outright in repo Settings).
+
+### Step 4 — Create the D1 database
+
+Workers & Pages → D1 → **Create database** → name it `critteria`.
+
+CLI equivalent: `npx wrangler d1 create critteria`
+
+*Checkpoint:* the database appears in the D1 list with a database ID.
+Copy the ID for Step 6.
+
+### Step 5 — Apply the schema
+
+Commit the `CREATE TABLE` statements below to the repo as `schema.sql`,
+then apply them to the remote D1:
+
+```
+npx wrangler d1 execute critteria --remote --file=./schema.sql
+```
+
+**Don't paste `schema.sql` into the D1 Console tab in the dashboard.** It
+looks plausible but silently mishandles multi-statement, commented SQL —
+pasting the whole file gives a "request malformed" error, and stripping
+the comments just moves the failure to "incomplete input." The CLI
+command above sends the file to D1's real batch-exec endpoint and works
+correctly. If you truly have no CLI, the Console can work one statement
+at a time (no comments, one `CREATE TABLE`/`CREATE INDEX` per paste),
+but there is no reason to do it that way.
+
+**The `--remote` flag matters.** Without it, wrangler writes to a local
+dev copy and the real database stays empty — a genuinely confusing
+failure, because every command appears to succeed.
+
+*Checkpoint:* `SELECT name FROM sqlite_master WHERE type='table';` in
+the D1 Console lists `families`, `kids`, `devices`, `pairing_codes`,
+`pets`, `pet_events`, `helper_action_usage`, plus the four Phase-5
+catalog tables (Cloudflare's own `_cf_KV` table also appears — that
+one's not yours, ignore it).
+
+Note the `PRAGMA foreign_keys = ON` at the top of the schema: D1
+supports FKs but does not enforce them by default. **The pragma applies
+per-connection, and a git-deployed Worker does not run it at request
+time** — so the schema's reliance on FK enforcement is currently
+theoretical, not actually active in production. Real enforcement would
+need `PRAGMA foreign_keys = ON` run at the top of the request handler,
+not just once at schema setup. Track carefully.
+
+#### schema.sql
+
+```sql
+-- Critteria backend schema (see SPEC.md §3, §9).
+-- Apply with: npx wrangler d1 execute critteria --remote --file=./schema.sql
+
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE families (
+  id          TEXT PRIMARY KEY,       -- 128-bit random hex, never derived
+  created_at  INTEGER NOT NULL
+);
+
+CREATE TABLE kids (
+  id           TEXT PRIMARY KEY,
+  family_id    TEXT NOT NULL REFERENCES families(id),
+  display_name TEXT NOT NULL,
+  avatar       TEXT,                  -- preset key or emoji
+  pin_hash     TEXT,                  -- SHA-256 of PIN + kid_id salt; nullable in v1
+  created_at   INTEGER NOT NULL
+);
+CREATE INDEX idx_kids_family ON kids(family_id);
+
+CREATE TABLE devices (
+  id          TEXT PRIMARY KEY,       -- client-generated UUID; stable across re-pairing
+  family_id   TEXT NOT NULL REFERENCES families(id),
+  kid_id      TEXT REFERENCES kids(id),  -- null until claimed
+  token_hash  TEXT NOT NULL UNIQUE,   -- SHA-256; raw token never stored; rotates
+  label       TEXT,                   -- e.g. "Ana's tablet"
+  created_at  INTEGER NOT NULL,
+  last_seen   INTEGER,
+  revoked     INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX idx_devices_token ON devices(token_hash);
+
+CREATE TABLE pairing_codes (
+  code_hash   TEXT PRIMARY KEY,       -- SHA-256 of 6-char code
+  family_id   TEXT NOT NULL REFERENCES families(id),
+  expires_at  INTEGER NOT NULL,       -- 5-min TTL
+  used_at     INTEGER                 -- non-null once redeemed; single use
+);
+
+CREATE TABLE pets (
+  id            TEXT PRIMARY KEY,
+  kid_id        TEXT NOT NULL UNIQUE REFERENCES kids(id),  -- one pet per kid
+  species       TEXT NOT NULL,
+  color_variant TEXT,
+  name          TEXT,
+  stage         TEXT NOT NULL DEFAULT 'young',
+  created_at    INTEGER NOT NULL,
+  hunger        REAL NOT NULL DEFAULT 80,
+  happiness     REAL NOT NULL DEFAULT 80,
+  energy        REAL NOT NULL DEFAULT 80,
+  cleanliness   REAL NOT NULL DEFAULT 80,
+  sleeping      INTEGER NOT NULL DEFAULT 0,
+  last_updated  INTEGER NOT NULL      -- server epoch ms; decay applied lazily
+);
+CREATE INDEX idx_pets_kid ON pets(kid_id);
+
+CREATE TABLE pet_events (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  pet_id        TEXT NOT NULL REFERENCES pets(id),
+  actor_kid_id  TEXT NOT NULL REFERENCES kids(id),
+  action        TEXT NOT NULL,        -- 'feed'|'play'|'clean'|'sleep'|'wake'|'visit'|'gift'
+  occurred_at   INTEGER NOT NULL,
+  detail        TEXT                  -- optional JSON
+);
+CREATE INDEX idx_pet_events_pet ON pet_events(pet_id, occurred_at DESC);
+
+-- Composite PK enforces once-a-day-per-action-per-visitor-per-host-pet:
+-- an INSERT OR ABORT either succeeds or hits the daily rate limit with
+-- no race window. Do NOT use INSERT OR IGNORE — it would silently
+-- succeed on the duplicate and let the helper action run.
+CREATE TABLE helper_action_usage (
+  visitor_kid_id  TEXT NOT NULL REFERENCES kids(id),
+  host_pet_id     TEXT NOT NULL REFERENCES pets(id),
+  action          TEXT NOT NULL,
+  utc_day         TEXT NOT NULL,      -- 'YYYY-MM-DD' (UTC)
+  used_at         INTEGER NOT NULL,
+  PRIMARY KEY (visitor_kid_id, host_pet_id, action, utc_day)
+);
+
+-- Deferred to Phase 5 (§8). Kept here so a future migration doesn't
+-- need to reshape any of the above.
+CREATE TABLE items (
+  id              TEXT PRIMARY KEY,
+  slot            TEXT NOT NULL,      -- 'head'|'neck'|'back'|...
+  name            TEXT NOT NULL,
+  image_asset     TEXT NOT NULL,
+  species_compat  TEXT NOT NULL,      -- JSON array of species keys
+  unlock_type     TEXT NOT NULL       -- 'points'|'streak'|'gift'
+);
+
+CREATE TABLE pet_equipped_items (
+  pet_id   TEXT NOT NULL REFERENCES pets(id),
+  slot     TEXT NOT NULL,
+  item_id  TEXT NOT NULL REFERENCES items(id),
+  PRIMARY KEY (pet_id, slot)
+);
+
+CREATE TABLE locations (
+  id           TEXT PRIMARY KEY,
+  name         TEXT NOT NULL,
+  image_asset  TEXT NOT NULL,
+  unlock_type  TEXT NOT NULL
+);
+
+CREATE TABLE pet_current_location (
+  pet_id       TEXT PRIMARY KEY REFERENCES pets(id),
+  location_id  TEXT NOT NULL REFERENCES locations(id)
+);
+```
+
+### Step 6 — Bind D1 in wrangler.toml
+
+**The dashboard's Bindings tab does not work for a git-connected Worker.**
+Any binding added through the UI silently fails to persist because the
+real source of truth is `wrangler.toml` and the dashboard won't let the
+two drift. (You'll know you're in this state if Settings → Variables and
+secrets says "Variables cannot be added to a Worker that only has static
+assets," or if the Bindings tab accepts a new D1 binding but shows "No
+connected bindings" again right after.)
+
+Instead, commit `wrangler.toml` to the repo root:
+
+```toml
+name = "critteria"
+main = "./dist/worker/index.js"
+compatibility_date = "<today's date, YYYY-MM-DD>"
+
+[assets]
+directory = "./"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "critteria"
+database_id = "<your D1 database's ID from Step 4>"
+```
+
+Find the database ID on the D1 database's own Overview page in the
+dashboard, or via `npx wrangler d1 list`. `main` points at a build
+output that doesn't exist until Step 8 — that's expected.
+
+*In code this becomes* `env.DB` inside function handlers, and
+`env.ASSETS` for static-file fallback.
+
+### Step 7 — Set the signup secret
+
+Worker → Settings → **Variables and secrets** → add `SIGNUP_SECRET`,
+type **Secret**, value = a long random string you generate:
+
+```
+# macOS/Linux
+openssl rand -hex 32
+```
+
+```powershell
+# Windows PowerShell
+-join ((48..57) + (65..90) + (97..122) | Get-Random -Count 48 | % { [char]$_ })
+```
+
+Unlike the D1 binding, secrets genuinely work from the dashboard — they
+are stored separately from `wrangler.toml` (correctly: never commit a
+secret value to git) and aren't subject to the same config-drift lock.
+Just the one environment; no Production/Preview split to worry about
+for a git-connected Worker like this one.
+
+This is the §7 gate that keeps your instance serving exactly one
+family. Once saved, the value is **not viewable again** — copy it into
+a password manager the moment you create it.
+
+### Step 8 — Write the functions, bundle, and commit
+
+Create `functions/api/` per the layout above, one file per endpoint,
+using Pages-Functions file-based-routing shape:
+
+```js
+// functions/api/pets/[id].js
+export async function onRequestGet({ request, params, env }) {
+  const token = (request.headers.get('Authorization') || '')
+    .replace('Bearer ', '');
+  // ...hash the token, verify against env.DB, load pet, apply lazy
+  //    decay, return current state as JSON...
+  return Response.json({ pet: { /* ... */ } });
+}
+```
+
+Then bundle:
+
+```
+npx wrangler pages functions build --outdir=dist/worker
+```
+
+**This file-based routing is a Pages-only convention — a plain Worker
+(which is what git-connected deploys produce now) does not understand
+`functions/` at all** and will not serve any of it. The bundler
+collapses `functions/api/*.js` into one `dist/worker/index.js` that does
+its own internal routing and falls back to `env.ASSETS.fetch(request)`
+for anything it doesn't handle — which is exactly what `wrangler.toml`'s
+`main` points at.
+
+**Commit `dist/worker/index.js`.** Cloudflare's build side does not
+regenerate this. It has to be rebuilt and committed by hand after every
+change under `functions/`, before you push. Forgetting = every endpoint
+404s on the next deploy.
+
+Also commit `.assetsignore` in the repo root, or the `[assets] directory
+= "./"` from Step 6 will upload things that were never meant to be
+public:
+
+```
+.git/
+.wrangler/
+functions/
+dist/
+docs/
+schema.sql
+wrangler.toml
+.assetsignore
+README.md
+SPEC.md
+node_modules/
+package.json
+package-lock.json
+```
+
+**The `.git/` line is not optional.** Wrangler's default ignore list
+only covers `.assetsignore`, `_redirects`, and `_headers` — it does
+*not* skip `.git` or `node_modules` on its own. Without `.git/` here,
+the entire commit history — every past version of every file — gets
+uploaded as publicly downloadable static assets alongside the site.
+
+*Gotcha:* **bindings and secrets only take effect on a deploy made
+after they were added.** If you added the D1 binding or `SIGNUP_SECRET`
+to an existing deployment, push a new commit (or hit Retry deployment)
+or `env.DB` / `env.SIGNUP_SECRET` will still be undefined at request
+time.
+
+### Step 9 — Deploy and verify
+
+`git push origin main`. Watch the deployment go green in the CF
+dashboard, then verify the API is alive before wiring the frontend:
+
+```
+curl -i https://critteria.immotus.app/api/kids
+# expect 401 — no token. A 404 means routing never reached the Worker
+#   (check that functions/ was actually rebuilt into dist/worker/index.js
+#   per Step 8, and if it still 404s, that [assets].run_worker_first
+#   isn't needed for your setup).
+# A 500 usually means the D1 binding didn't apply (Step 6, or the Step 8
+#   deploy-after-binding gotcha).
+```
+
+Then create your family — the one call that needs `SIGNUP_SECRET`:
+
+```
+curl -X POST https://critteria.immotus.app/api/family \
+  -H 'Content-Type: application/json' \
+  -d '{"signupSecret":"<the secret>","deviceId":"'"$(uuidgen)"'","label":"first tablet"}'
+# expect a JSON body with a device token. Save it, this is your bootstrap
+# admin device.
+```
+
+**On Windows, use `curl.exe` explicitly** — PowerShell's built-in `curl`
+is an alias for `Invoke-WebRequest` and takes different flags, so
+`-X`/`-H`/`-d` either error or mean something else. Also swap in a
+fixed UUID for `deviceId`, since `uuidgen` isn't a Windows command.
+PowerShell equivalent:
+
+```powershell
+curl.exe -X POST https://critteria.immotus.app/api/family `
+  -H "Content-Type: application/json" `
+  -d '{\"signupSecret\":\"<the secret>\",\"deviceId\":\"00000000-0000-0000-0000-000000000001\",\"label\":\"first tablet\"}'
+```
+
+Note the backslash-escaped double quotes inside `-d`'s single-quoted
+value — PowerShell's quote handling for `curl.exe` arguments needs
+JSON's inner `"` escaped even though it looks like it shouldn't. The
+backtick at end of line is PowerShell's line continuation, the
+equivalent of Bash's trailing `\`.
+
+Then confirm the §7 gate actually holds — a wrong secret must fail:
+
+```
+curl -X POST https://critteria.immotus.app/api/family \
+  -H 'Content-Type: application/json' \
+  -d '{"signupSecret":"wrong","deviceId":"x","label":"x"}'
+# expect 401/403. A 200 here means your instance is open to the world —
+# stop and audit /api/family before continuing.
+```
+
+*Checkpoint:* `SELECT * FROM families;` in the D1 Console shows one
+row. The backend is now real, and nothing in the app has changed yet.
+
+### Step 10 — Wire the frontend
+
+Now `index.html` gets a sync layer bolted on: on first launch, a family
+passcode + kid pick-avatar-and-PIN flow that calls `/api/family` (or
+`/api/pair` for the second-onwards tablet) and stashes the returned
+device token in `localStorage`. From then on, the existing `state` object
+is read from and written back to `/api/pets/:id` every ~5 s while the
+tab is foregrounded — `localStorage` becomes a warm cache + offline
+read, not the source of truth. Add a "Visit sibling" view that lists
+family pets, renders one side-by-side with your own, and offers the
+once-a-day helper-action buttons (server-enforced per §7).
+
+### Rollback
+
+Every step is reversible and none of it changes the frontend PWA. If
+the hosting change at Step 2 goes badly, revert the Worker deployment
+and the app keeps working from `localStorage` — no data lives on the
+server until Step 9. Delete the Worker and D1 database and you are
+exactly where you started.
+
+### Free-tier headroom
+
+For a family of four playing an hour a day at 5-second polling: ~4 kids
+× 720 polls/hr × 1 hr = ~2 900 reads/day, plus a handful of write
+actions per kid per session. Well under CF Workers' 100 k requests/day
+and D1's 5 GB free-tier limits, with plenty of room for sibling-visit
+traffic on top. Star-homeschool has been running the same architecture
+long enough to confirm free is realistic, not a technicality.
