@@ -52,10 +52,10 @@ live in this repo's `main` history.
 - **Frontend**: six species with idle/happy/sad/sleep poses drawn to the
   style rules in `SPEC.md §4`. Action poses (eat/play/bath) still fall
   back to the required tier per the fallback chain.
-- **Hatching sequence**: T-Rex has the full one-time animated hatch/birth
-  sequence (egg → crack → crack → newborn) played right after species
-  selection; see `SPEC.md §5` "Hatching / birth sequence" for the build
-  plan and per-species progress. The other five species still skip
+- **Hatching sequence**: T-Rex and Dragon have the full one-time animated
+  hatch/birth sequence (egg → crack → crack → newborn) played right after
+  species selection; see `SPEC.md §5` "Hatching / birth sequence" for the
+  build plan and per-species progress. The other four species still skip
   straight to instant pet creation pending their four hatch frames.
 - **Backend**: live at `critteria.immotus.app` — CF Workers with
   `[assets]` + D1, `SIGNUP_SECRET`-gated family creation, pairing codes
