@@ -736,13 +736,17 @@ enforces the once-a-day rate limit via `helper_action_usage`
    play, bath) per species and the three shared item sprites (apple, soap,
    ball); build the travelling-item choreography and the shake/bounce CSS
    loops (no art dependency for the choreography itself).
-3. **Backend + Social v1 (next)**: Cloudflare Workers with `[assets]`
-   binding + D1. `SIGNUP_SECRET`-gated family creation + pairing-code kid
-   device pairing (§7). Server-side pet state with lazy decay, polling
-   reads at ~5 s while foregrounded. Read-only sibling visits, once-a-day
-   helper actions on a sibling's pet, gifting, presence badge derived
-   from `pet_events`. Concrete deploy recipe and every gotcha we've hit
-   are in §9.
+3. **Backend + Social v1 (in progress)**: Cloudflare Workers with
+   `[assets]` binding + D1, deployed and live at `critteria.immotus.app`
+   (§9 Steps 1–8 done). `SIGNUP_SECRET`-gated family creation is verified
+   working against the real deployment; the pairing-code round-trip and
+   frontend sync layer (§9 Step 10) are not built yet. Server-side pet
+   state with lazy decay, polling reads at ~5 s while foregrounded.
+   Read-only sibling visits, once-a-day helper actions on a sibling's
+   pet, gifting, presence badge derived from `pet_events` — all
+   implemented server-side in `functions/api/`, not yet exercised
+   against the live deployment. Concrete deploy recipe and every gotcha
+   we've hit are in §9.
 4. **End-state features**: lifecycles/aging, accessories, locations
    (color variants already landed on `main` as palette-remap work).
 5. **Nice-to-haves**: Durable Objects + WebSocket for live co-visit
@@ -843,7 +847,7 @@ described GH Pages as the host. GitHub's "DNS check successful" +
 "Enforce HTTPS unavailable" state on that repo is inert zombie config
 and can be ignored (or GH Pages disabled outright in repo Settings).
 
-### Step 4 — Create the D1 database
+### Step 4 — Create the D1 database (done)
 
 Workers & Pages → D1 → **Create database** → name it `critteria`.
 
@@ -852,7 +856,7 @@ CLI equivalent: `npx wrangler d1 create critteria`
 *Checkpoint:* the database appears in the D1 list with a database ID.
 Copy the ID for Step 6.
 
-### Step 5 — Apply the schema
+### Step 5 — Apply the schema (done)
 
 Commit the `CREATE TABLE` statements below to the repo as `schema.sql`,
 then apply them to the remote D1:
@@ -869,6 +873,19 @@ command above sends the file to D1's real batch-exec endpoint and works
 correctly. If you truly have no CLI, the Console can work one statement
 at a time (no comments, one `CREATE TABLE`/`CREATE INDEX` per paste),
 but there is no reason to do it that way.
+
+**We hit this ourselves: the Console's one-statement-at-a-time path let a
+column silently drift from schema.sql.** The `devices` table went live
+without its `label` column, which didn't surface as an error at table-
+creation time — it surfaced later as a `D1_ERROR: table devices has no
+column named label` when `/api/family` tried to insert a row (§9 Step 9).
+Fix in place was `ALTER TABLE devices ADD COLUMN label TEXT;`, since the
+table was still empty. If you go the one-statement-at-a-time route, verify
+each table immediately after creating it with
+`PRAGMA table_info(<table>);` against the column list below, rather than
+trusting the `CREATE TABLE` succeeded exactly as pasted — the CLI's
+single `--file` apply doesn't have this failure mode, which is the real
+reason to prefer it.
 
 **The `--remote` flag matters.** Without it, wrangler writes to a local
 dev copy and the real database stays empty — a genuinely confusing
@@ -1006,7 +1023,7 @@ CREATE TABLE pet_current_location (
 );
 ```
 
-### Step 6 — Bind D1 in wrangler.toml
+### Step 6 — Bind D1 in wrangler.toml (done)
 
 **The dashboard's Bindings tab does not work for a git-connected Worker.**
 Any binding added through the UI silently fails to persist because the
@@ -1040,7 +1057,7 @@ output that doesn't exist until Step 8 — that's expected.
 *In code this becomes* `env.DB` inside function handlers, and
 `env.ASSETS` for static-file fallback.
 
-### Step 7 — Set the signup secret
+### Step 7 — Set the signup secret (done)
 
 Worker → Settings → **Variables and secrets** → add `SIGNUP_SECRET`,
 type **Secret**, value = a long random string you generate:
@@ -1065,7 +1082,7 @@ This is the §7 gate that keeps your instance serving exactly one
 family. Once saved, the value is **not viewable again** — copy it into
 a password manager the moment you create it.
 
-### Step 8 — Write the functions, bundle, and commit
+### Step 8 — Write the functions, bundle, and commit (done)
 
 Create `functions/api/` per the layout above, one file per endpoint,
 using Pages-Functions file-based-routing shape:
@@ -1134,10 +1151,16 @@ to an existing deployment, push a new commit (or hit Retry deployment)
 or `env.DB` / `env.SIGNUP_SECRET` will still be undefined at request
 time.
 
-### Step 9 — Deploy and verify
+### Step 9 — Deploy and verify (partially done)
 
 `git push origin main`. Watch the deployment go green in the CF
 dashboard, then verify the API is alive before wiring the frontend:
+
+**Confirmed working on the live deployment:** the `/api/kids` no-token
+check, and a real `/api/family` call that returned a device token (after
+the Step 5 schema-drift gotcha above was fixed). Not yet confirmed: the
+wrong-secret rejection, and the pairing-code round-trip. Whoever picks
+this back up should run those before calling Step 9 fully done.
 
 ```
 curl -i https://critteria.immotus.app/api/kids
