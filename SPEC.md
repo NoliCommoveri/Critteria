@@ -665,7 +665,8 @@ the same shape as a `SPECIES_POSES` registration.
   internally with their own species' poses.
   `reference/dragon-egg-reference-4x.png` holds all four hatch frames (4x)
   for attaching when generating dragon's action poses next.
-- 🟨 Hippocampus — **frames 1–3 of 4 drawn**, plan for the rest in
+- 🟨 Hippocampus — **all four frames drawn and wired**, frame 3 pending a
+  re-roll (see below); plan in
   "Hippocampus hatch sequence (planned)" below. Departs from the other
   two in that it isn't an egg at all: a mussel shell on the seabed that
   opens to reveal the baby. Everything else about the sequence — beat
@@ -762,8 +763,32 @@ the same shape as a `SPECIES_POSES` registration.
   same values as the glow, so the rule would erase its highlights as
   "disconnected glow". Frame 3 relies on the tightened palette instead.
 
-  `reference/hippocampus-egg-reference-4x.png` holds the three frames so
-  far at 4× (1536×512) for attaching when generating frame 4. Unlike
+  `hippocampus-hatch.png` is the reveal: the hatchling sitting up in the
+  open shell, white body, teal mane and fins, tail curled beside it. The
+  creature measures 38×41px against frame 3's 26×14 — 2.9× taller, and
+  39% of the adult idle sprite's 104px height. That ratio is the frame's
+  actual job: an earlier attempt drew the hatchling at the same 14px
+  height as the peek, which read as a pretty shell with a smudge in it
+  rather than as the payoff, and cut hard to a 103px idle sprite seconds
+  later. Content occupies rows 22–116. Speckle is 4.6%, the highest in
+  the set, from the face's fine detail; not visible at display size.
+
+  Wired into `HATCH_SEQUENCES` with the `intro` override, so picking
+  hippocampus now plays the full sequence instead of falling through to
+  instant creation.
+
+  **Known drift, not yet corrected:** the sand's width across the four
+  frames measures 103.5 / 104.4 / 100.3 / 107.7 canvas px, because the
+  crop scales each frame by the *shell* and the generator did not hold
+  the sand/shell ratio constant (1.005 / 1.014 / 0.974 / 1.046). The
+  ground therefore breathes by up to 7px between beats. Anchoring on the
+  sand instead just moves the error onto the shell, since frames 3–4
+  legitimately change the lid's angle; anchoring on the mean of the two
+  halves it, to about 3.7px on each. Worth doing once frame 3 is final,
+  not before.
+
+  `reference/hippocampus-egg-reference-4x.png` holds all four frames at
+  4× (2048×512). Unlike
   dragon's hatch reference it sits on flat `#FF00FF` rather than a dark
   backdrop, so it doubles as a demonstration of the background the next
   generation must produce.
