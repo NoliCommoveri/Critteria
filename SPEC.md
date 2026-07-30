@@ -724,15 +724,58 @@ becoming a beachball. Register it like the curled `sleep` poses instead:
 `reference/hippocampus-palette.txt` — the baby has to match
 `hippocampus.png` because the pet screen cuts straight to that idle
 sprite seconds later. The shell and sand don't exist on that ramp (it's
-entirely teal/aqua plus a near-white), so they need a sub-ramp layered on
-top, exactly as dragon's coals did:
-`reference/hippocampus-hatch-shell-palette.txt`, ~6–8 entries — 3 shell
-exterior (deep mauve ridge shadow → dusty mauve → warm shell pink), 2
-nacre interior, 2 sand. Reuse the locked ramp's `#fbfcfb` for the pearl
-highlight rather than adding a second near-white; that's the mismatch
-that produced dragon's salt-and-pepper speckle. Same for the glow leaking
-out of the gap — build it from the ramp's existing `#c6eee8`/`#a4e4de` as
-flat bands, never a gradient.
+entirely teal/aqua plus near-whites), so they get a sub-ramp layered on
+top exactly as dragon's coals did:
+`reference/hippocampus-hatch-shell-palette.txt`/`.png`, 7 entries.
+
+| Hex | L\* | Role |
+|---|---|---|
+| `#4e2130` | 19.7 | Shell ridge shadow (exterior darkest) |
+| `#7a5c33` | 41.3 | Sand shadow |
+| `#8f5170` | 42.6 | Shell exterior mid |
+| `#a98292` | 58.5 | Shell exterior light / rim |
+| `#b7894f` | 60.4 | Sand light |
+| `#e89d8d` | 71.7 | Nacre shadow (inner rim) |
+| `#f9c8c2` | 84.7 | Nacre lit (interior surface) |
+
+Plus two **reused** locked entries rather than new ones: `#fbfcfb` as the
+pearl highlight and `#103133` as the outline for shell and sand both, so
+the whole frame keeps the species' single hue-shifted outline.
+
+These values were picked against the quantizer's actual behaviour, not by
+eye. Cleanup step 5 snaps every pixel to its nearest palette entry by RGB
+distance, so what matters is the *minimum distance in the combined
+17-colour palette* — two entries at distance d put a decision boundary at
+d/2, and source pixels near that boundary flip between them, which is
+what speckle is. The shipped benchmark is dragon's coal ramp at 63.4; the
+ramp above holds **64.1** as its tightest pair (`#4e2130` against the
+`#103133` outline it sits next to). Three constraints shaped it:
+
+- **No second near-white.** A pale warm nacre highlight is the natural
+  choice and it is a trap: at L\* ≈ 90 it lands ~45 from the locked
+  `#eef6f5`/`#f5fbf9`/`#fbfcfb` cluster, which is under half the working
+  spacing and reproduces dragon's speckle exactly, with warm and cool
+  whites alternating pixel to pixel. Reusing `#fbfcfb` removes the
+  failure mode instead of tuning around it.
+- **The interior must out-light the baby.** Nacre lit sits at L\* 84.7
+  against the baby's light teal at 79.7 and body mid at 73.0, so the
+  hatchling reads as a darker shape on a bright ground. An earlier
+  candidate at L\* 73.6 was almost exactly the body mid's lightness —
+  the silhouette would have depended on hue alone and gone muddy at
+  128px, and worse in greyscale or for a colourblind kid.
+- **Shell and sand separate by hue, not just value.** They touch along
+  the contact line, so exterior mid and sand shadow are near-identical in
+  lightness (42.6 vs 41.3) but ~80° apart in hue — plum against ochre —
+  holding 65.4 RGB between them.
+
+Everything else stays on-ramp: build the glow leaking from the gap out of
+the locked `#c6eee8`/`#a4e4de` as flat bands, never a gradient, and the
+bubbles from `#fbfcfb` and `#c6eee8`.
+
+One aesthetic note the numbers don't cover: keep the exterior's chroma
+low (the rim is C\* 17.8, a dusty rose-grey, not a candy pink). Unicorn's
+locked ramp is 20 shades of saturated pink, and a high-chroma shell would
+read as unicorn parts rather than oyster.
 
 **Generation.** One 4-panel sheet in a single call, as dragon did — four
 cells held registration fine where eight drifted. Attach both
