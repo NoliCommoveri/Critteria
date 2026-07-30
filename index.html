@@ -411,6 +411,17 @@
     font-weight: 600;
     cursor: pointer;
   }
+  .pairing-code-display {
+    font-size: 2.4rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    /* nudge the visual center right to compensate for letter-spacing's
+       trailing gap, so the code doesn't look off-center */
+    padding-left: 0.08em;
+    color: var(--accent);
+    margin: 1rem 0;
+    font-family: "Courier New", monospace;
+  }
 </style>
 </head>
 <body>
@@ -476,11 +487,21 @@
       <button type="button" class="back-link" id="visit-back">← Back to your pet</button>
     </div>
 
+    <div class="species-picker" id="add-device">
+      <h1 class="picker-title">Add another tablet</h1>
+      <p class="picker-hint">Enter this code on the new tablet's "I have a code" screen.</p>
+      <div class="pairing-code-display" id="pairing-code-display">------</div>
+      <p class="status" id="pairing-code-status"></p>
+      <button type="button" class="species-btn" id="pairing-code-refresh">🔄 Get a new code</button>
+      <button type="button" class="back-link" id="pairing-code-back">← Back to your pet</button>
+    </div>
+
     <div class="app-body" id="app-body">
     <div class="name-row">
       <h1 id="pet-name-display">Widget</h1>
       <button class="rename-btn" id="rename-toggle" aria-label="Rename pet">✏️</button>
       <button class="rename-btn" id="connect-toggle" aria-label="Connect to family" title="Connect to family" style="display: none;">🔗</button>
+      <button class="rename-btn" id="add-device-toggle" aria-label="Add another tablet" title="Add another tablet" style="display: none;">📲</button>
     </div>
     <form class="rename-form" id="rename-form">
       <input type="text" id="rename-input" maxlength="16" placeholder="Pet's name">
@@ -1092,6 +1113,7 @@
   var connectToggle = document.getElementById('connect-toggle');
   var saveNote = document.getElementById('save-note');
   var btnVisit = document.getElementById('btn-visit');
+  var addDeviceToggle = document.getElementById('add-device-toggle');
 
   var state = loadState();
 
@@ -1101,7 +1123,7 @@
   // #app-body's contents; it no longer decides which screen is showing —
   // every state transition (species picked, family joined, kid claimed,
   // visit opened/closed) calls setUiScreen() explicitly instead.
-  var SCREENS = ['species-picker', 'app-body', 'family-setup', 'kid-picker', 'sibling-visit'];
+  var SCREENS = ['species-picker', 'app-body', 'family-setup', 'kid-picker', 'sibling-visit', 'add-device'];
   var uiScreen = null;
 
   function setUiScreen(name) {
@@ -1233,6 +1255,7 @@
     btnClean.disabled = state.sleeping;
 
     connectToggle.style.display = device.token ? 'none' : 'inline-block';
+    addDeviceToggle.style.display = device.token ? 'inline-block' : 'none';
     btnVisit.style.display = device.petId ? 'block' : 'none';
     saveNote.textContent = device.petId
       ? "Your pet's care is saved online — the whole family can visit."
@@ -1441,6 +1464,69 @@
     setupPairForm.style.display = 'none';
     setupStatus('');
     setUiScreen('family-setup');
+  });
+
+  // --- Add-another-tablet screen -----------------------------------------------
+  //
+  // The in-app counterpart to POST /api/pairing-code — any already-paired
+  // device can mint a code (SPEC.md §7 "Additional device pairing" has no
+  // "must have claimed a kid first" requirement), so this button shows up
+  // as soon as device.token exists, same gate as the kid-picker/pet flow.
+  // Before this existed, minting a code required a raw curl/PowerShell
+  // call — see SPEC.md §9 Step 9's manual pairing test for that fallback.
+
+  var pairingCodeDisplay = document.getElementById('pairing-code-display');
+  var pairingCodeStatusEl = document.getElementById('pairing-code-status');
+  var pairingCodeRefresh = document.getElementById('pairing-code-refresh');
+  var pairingCodeBack = document.getElementById('pairing-code-back');
+  var pairingCodeCountdownTimer = null;
+  var pairingCodeExpiresAt = null;
+
+  function pairingCodeStatus(text) { pairingCodeStatusEl.textContent = text; }
+
+  function stopPairingCodeCountdown() {
+    clearInterval(pairingCodeCountdownTimer);
+    pairingCodeCountdownTimer = null;
+  }
+
+  function tickPairingCodeCountdown() {
+    var secondsLeft = Math.round((pairingCodeExpiresAt - Date.now()) / 1000);
+    if (secondsLeft <= 0) {
+      pairingCodeStatus('Code expired — get a new one.');
+      stopPairingCodeCountdown();
+      return;
+    }
+    pairingCodeStatus('Expires in ' + secondsLeft + 's — one use only.');
+  }
+
+  async function mintPairingCode() {
+    stopPairingCodeCountdown();
+    pairingCodeDisplay.textContent = '------';
+    pairingCodeStatus('Getting a code…');
+    try {
+      var data = await api('/api/pairing-code', { method: 'POST' });
+      // Split for readability (e.g. "AB3 F7Q") — purely cosmetic, the
+      // space isn't part of the code the other tablet types in.
+      pairingCodeDisplay.textContent = data.code.slice(0, 3) + ' ' + data.code.slice(3);
+      pairingCodeExpiresAt = data.expiresAt;
+      tickPairingCodeCountdown();
+      pairingCodeCountdownTimer = setInterval(tickPairingCodeCountdown, 1000);
+    } catch (err) {
+      pairingCodeStatus('Could not get a code — check the connection and try again.');
+    }
+  }
+
+  addDeviceToggle.addEventListener('click', function () {
+    setUiScreen('add-device');
+    mintPairingCode();
+  });
+
+  pairingCodeRefresh.addEventListener('click', mintPairingCode);
+
+  pairingCodeBack.addEventListener('click', function () {
+    stopPairingCodeCountdown();
+    setUiScreen('app-body');
+    render();
   });
 
   // --- Kid picker screen -----------------------------------------------------
