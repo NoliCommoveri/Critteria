@@ -17,15 +17,18 @@ A Tamagotchi-style virtual pet app for four siblings, built as a web app/PWA
   pegasus, hippocampus, phoenix, griffin, and dragon (`assets/`); slime/blob is
   still placeholder SVG art — see Art pipeline below. Species is chosen
   once at first launch and then locked for that pet — see Species selection
-  below. T-Rex, unicorn, dragon, hippocampus, and pegasus are the kept
-  roster (all five conform to the Art pipeline rules below); phoenix and
-  griffin are legacy placeholders slated for removal, not yet acted on.
+  below. T-Rex, unicorn, dragon, hippocampus, pegasus, and wolf are the
+  kept roster (all six conform to the Art pipeline rules below; wolf's
+  four poses exist on disk but aren't wired into `SPECIES_POSES` or the
+  picker yet — Phase 2, §8); phoenix, griffin, and slime/blob are legacy
+  placeholders slated for removal, not yet acted on.
 - Mood- and action-driven **pose swapping**: the renderer picks a distinct
-  drawn sprite per state (idle/happy/sad/sleep + eat/play/bath) from the
-  `SPECIES_POSES` manifest, falling back to `idle` for any pose not yet
-  drawn — see Art pipeline below. The five kept species each have all four
-  required poses (idle/happy/sad/sleep); action poses (eat/play/bath) are
-  still unbuilt for all of them, so the fallback chain does that work.
+  drawn sprite per state (idle/happy/sad/sleep + eat/eat-chew/play/bath) from
+  the `SPECIES_POSES` manifest, falling back to `idle` for any pose not yet
+  drawn — see Art pipeline below. The kept species (excluding wolf until it
+  is wired in) each have all four required poses (idle/happy/sad/sleep);
+  action poses (eat/eat-chew/play/bath) are still unbuilt for all of them,
+  so the fallback chain does that work.
 - `localStorage` persistence.
 
 Everything below is the target end-state, to be built in phases on top of
@@ -40,8 +43,10 @@ this prototype.
 [Cloudflare Worker on critteria.immotus.app]
         |-- [assets] binding → serves index.html, assets/, sw.js
         |-- functions/api/*  → API routes bundled into dist/worker/index.js
-        |-- [[d1_databases]] → D1 (SQLite): families, kids, devices, pets,
-                                pet_events, helper_action_usage, catalog
+        |-- [[d1_databases]] → D1 (SQLite): families, kids, devices,
+                                pairing_codes, pets, pet_events,
+                                helper_action_usage, plus deferred
+                                catalog tables (§3)
 ```
 
 One Worker serves the PWA and the API from the same origin — no CORS, no
@@ -96,7 +101,8 @@ Live tables (v1):
   (`feed`/`play`/`clean`/`sleep`/`wake`/`visit`/`gift`), occurred_at,
   detail (optional JSON — gift contents etc.). Append-only; doubles as
   audit trail, visit history, and presence signal (any event by a
-  device within the last ~30 s = "currently visiting"). `visits` from
+  kid within the last ~30 s = "currently visiting" — `actor_kid_id` is
+  what's stored on each event, not device_id). `visits` from
   an earlier draft is dropped — presence and visit history come out of
   `pet_events` alone, saving a second write per session.
 - `helper_action_usage` — visitor_kid_id, host_pet_id, action, utc_day
@@ -104,9 +110,14 @@ Live tables (v1):
   `INSERT OR ABORT` either succeeds or fails on the daily rate limit
   with no race window — do not use `INSERT OR IGNORE`, which would
   silently succeed on the duplicate and let the helper action run.
+  Day boundary is UTC deliberately (one column, no per-family config),
+  so on the US west coast the daily reset lands mid-afternoon local —
+  fine for one family with a stable timezone; if this ever feels wrong,
+  the fix is a `families.tz` column and computing the day string from
+  it, not schema changes to this table.
 
-Deferred tables (Phase 5, §8) — kept in the schema so a future
-migration doesn't need to reshape any of the above:
+Deferred tables (Phase 5, §8) — four of them, kept in the schema so a
+future migration doesn't need to reshape any of the above:
 
 - `pet_equipped_items` — pet_id, slot, item_id.
 - `items` (catalog) — id, slot (head/neck/back/…), name, image_asset,
@@ -167,7 +178,12 @@ Every sprite, for every species and pose, must satisfy:
 `trex.png` and `trex-happy.png` are the first conforming assets: 128×128,
 20-colour shared palette, identical scale and ground line (baseline row 117,
 creature 104px tall = 81% of canvas), hue-shifted outline. They came from
-cells 1–2 of a generated 8-pose sheet, via the cleanup below.
+cells 1–2 of a generated 8-pose sheet, via the cleanup below. `trex-sad.png`
+and `trex-sleep.png` followed later, generated on their own attaching the
+by-then-growing reference and quantized onto the locked ramp; T-Rex now has
+all four required poses. `reference/trex-palette.txt`/`.png` hold the ramp
+and `reference/trex-reference-4x.png` holds all four poses (4x) for
+attaching when T-Rex's action poses are generated next.
 
 `dragon.png` (idle) is the second conforming asset and the first *new*
 species built to these rules from the start: 128×128, purple/blue 19-colour
@@ -203,7 +219,9 @@ generating `dragon`'s action poses next.
 
 `unicorn` has also been completed to these rules (idle/happy/sad/sleep, same
 128×128/81%-fill registration), it just predates this paragraph being
-written up.
+written up. `reference/unicorn-palette.txt`/`.png` hold the locked pink-on-
+pink ramp and `reference/unicorn-reference-4x.png` holds all four poses
+(4x) for attaching when unicorn's action poses are generated next.
 
 `hippocampus.png` (idle) is a conforming asset built the same way as dragon's
 first pose: generated as a single pose (no sheet, no conforming reference to
@@ -331,13 +349,24 @@ holds all four (idle/happy/sad/sleep, 4x) and is what gets attached when
 generating `pegasus`'s action poses next.
 
 `hippocampus` and `pegasus` were built out to these rules independently, in
-parallel. Both are keepers — the roster is **T-Rex, unicorn, dragon,
-hippocampus, and pegasus**, all five now at the required four-pose tier.
-`griffin` and `phoenix` are the ones being dropped: their stills predate
-these rules — 471–640px, anti-aliased, gradient-shaded, and inconsistent in
-camera angle (the griffin painterly ¾, formerly the unicorn full side) —
-and won't be re-cut. That removal (species picker, `SPECIES_POSES`, and the
-asset files themselves) hasn't been done yet.
+parallel. Both are keepers.
+
+`wolf` is the sixth keeper, also built to these rules — all four required
+poses (idle/happy/sad/sleep, 128×128, shared ground line, hue-shifted
+outline) exist on disk, with `reference/wolf-palette.txt`/`.png` holding
+the locked ramp and `reference/wolf-reference-4x.png` holding all four
+poses (4x) for attaching when its action poses are generated next. Not yet
+wired into `SPECIES_POSES` or the picker — that wiring is one of the
+remaining Phase 2 tasks (§8).
+
+The roster is therefore **T-Rex, unicorn, dragon, hippocampus, pegasus,
+and wolf**, all six at the required four-pose tier. `griffin`, `phoenix`,
+and `slime/blob` are the ones being dropped: griffin and phoenix predate
+these rules — 471–640px, anti-aliased, gradient-shaded, and inconsistent
+in camera angle (the griffin painterly ¾, formerly the unicorn full side)
+— and won't be re-cut; blob is the placeholder SVG that predates the
+pixel-art pipeline entirely. That removal (species picker,
+`SPECIES_POSES`, and the asset files themselves) hasn't been done yet.
 
 ### Cleanup pass for generated art
 
@@ -481,6 +510,11 @@ doesn't move and nothing flickers. The travelling item and the other two
 reaction loops are CSS, so they work regardless of which poses exist — the
 approach phase is worth building before any pose art lands.
 
+`sad → idle` and `sleep → idle` are listed for defensive rendering only —
+both are required tier, so these paths should never trigger for a keeper
+species; they exist so the renderer degrades cleanly during art work in
+progress rather than throwing on a lookup miss.
+
 When a pose resolves exactly, the stage gets `pose-<name>`. When it falls
 back, it also gets `pose-fallback`, and **only then** do the old CSS fakes
 (desaturate-on-sad, dim-on-sleep, droop rotation) apply — real pose art must
@@ -555,10 +589,15 @@ per-species work.
 ### Lifecycles (aging)
 `pets.stage` advances egg → hatchling → young → teen → adult based on
 elapsed real time since `created_at` (computed lazily, same pattern as stat
-decay — no cron needed). v1: time-gated only. Later enhancement: also
-require a minimum average care score to advance, so pure neglect doesn't
-still age the pet up — deliberately deferred since it adds complexity kids
-may find punishing/confusing at first.
+decay — no cron needed). Lifecycle aging is a Phase-4 feature (§8), which
+is why the schema defaults new pets to `'young'` rather than `'egg'`: v1
+pets skip the pre-lifecycle stages entirely (they're "already adopted"),
+and when aging lands, the pet-creation path will start new pets at `'egg'`
+so the progression has somewhere to run. When aging first ships: v1 is
+time-gated only. Later enhancement: also require a minimum average care
+score to advance, so pure neglect doesn't still age the pet up —
+deliberately deferred since it adds complexity kids may find
+punishing/confusing at first.
 
 ### Species selection
 Species is picked once, at first launch, and then locked for the life of
@@ -582,47 +621,52 @@ the gifting mechanic below), or a simple points-based in-app shop — no real
 money involved anywhere.
 
 ### Change location
-`pets.current_location_id` swaps the background image behind the pet.
-Cheapest feature here — no per-species art, no anchor math, just an image
-swap. Unlockable the same way as accessories, or free to switch among
-whatever's unlocked.
+The `pet_current_location` row for a pet (`pet_id → location_id`, §3
+deferred tables) swaps the background image behind the pet. Cheapest
+feature here — no per-species art, no anchor math, just an image swap.
+Unlockable the same way as accessories, or free to switch among
+whatever's unlocked. Kept as a separate one-row-per-pet table rather
+than a column on `pets` so the location catalog can grow without a
+migration touching the hot `pets` row.
 
 ### Color/variation at species selection
 At creation, alongside picking species, the kid picks a color variant
-(stored as a named preset).
+(stored as a named preset). Shipped on `main` — the notes below are the
+design rationale, not a plan.
 
 Originally specced as a CSS `hue-rotate` filter over the base sprite. That
-no longer holds once §4 locks a shared palette: hue-rotating by an arbitrary
-angle produces colors that are by definition off-palette, and it discolors
-incidental parts (teeth, eye whites, mouth interior) along with the intended
-body color — visible on the current unicorn, whose gold hooves and horn shift
-with its mane.
+no longer held once §4 locked a shared palette: hue-rotating by an
+arbitrary angle produced colors that were by definition off-palette, and
+it discolored incidental parts (teeth, eye whites, mouth interior) along
+with the intended body color — visible on the pre-remap unicorn, whose
+gold hooves and horn shifted with its mane.
 
-Instead, each species ships **2–3 hand-picked palette swaps**: a small map of
-`{ source palette index → replacement palette index }` per variant, applied
-once per sprite at load time on an offscreen canvas and cached. Bounded work
-(2–3 short mappings per species, not an image per color × species), stays on
-palette, and leaves the parts that shouldn't change alone. Because it's a
-palette remap rather than a filter, it applies uniformly across every pose
-without per-pose tuning.
+Instead, each species ships **2–3 hand-picked palette swaps**: a small map
+of `{ source palette index → replacement palette index }` per variant,
+applied once per sprite at load time on an offscreen canvas and cached.
+Bounded work (2–3 short mappings per species, not an image per color ×
+species), stays on palette, and leaves the parts that shouldn't change
+alone. Because it's a palette remap rather than a filter, it applies
+uniformly across every pose without per-pose tuning.
 
 ### Simultaneous own + sibling pet during visits
 The one item here with real backend weight. Visiting a sibling means
 rendering two pets side-by-side: the visitor's own pet (local/cached) and
-the host's pet fetched from their Durable Object. Two implementation
-options:
-- **v1 (recommended to start): polling.** Fetch the host pet's current
-  state/location/accessories every few seconds while visiting. Simple to
-  build, no WebSocket infrastructure needed, "live enough" for kids taking
-  turns caring for each other's pets.
-- **v2: WebSocket push.** The host's Durable Object holds open WebSocket
-  connections and broadcasts state changes instantly to any connected
-  visitor — needed if we want truly simultaneous co-visit (both kids acting
-  on the host pet at once, or a synchronous two-pet mini-game later).
+the host's pet fetched from the server. Two implementation options:
+- **v1 (recommended to start, matches §2): polling.** Fetch the host pet's
+  current state/location/accessories from `/api/pets/:id` every few
+  seconds while visiting. Simple to build, no WebSocket or Durable Object
+  infrastructure needed, "live enough" for kids taking turns caring for
+  each other's pets.
+- **v2: Durable Objects + WebSocket push.** A per-pet DO holds open
+  WebSocket connections and broadcasts state changes instantly to any
+  connected visitor — needed if we want truly simultaneous co-visit (both
+  kids acting on the host pet at once, or a synchronous two-pet mini-game
+  later). This is the deferred item called out in §2.
 
-Recommendation: build polling first: it satisfies "see both pets on screen
-at once" fully, and the Durable Object model means upgrading to WebSocket
-push later doesn't require a data-model change, just a transport change.
+Recommendation matches §2: build polling first. It satisfies "see both
+pets on screen at once" fully, and upgrading to DO + WebSocket push later
+is a transport change, not a data-model change.
 
 ## 6. Social / visiting features (recap)
 
@@ -651,15 +695,28 @@ receives its own device token. No secret involved — the code *is* the
 secret, briefly. Same mechanism a kid uses to add their second tablet or
 a friend joining later (see also §5 "friends" note).
 
+**Kid rows** are created via `POST /api/kids` (auth'd, family-scoped from
+the device token) — the setup UI on the bootstrap device makes one row
+per sibling up front (display_name + avatar), and additional kids can be
+added later from any already-paired device in the family. Kid rows are
+distinct from device rows: a kid can exist before any device has claimed
+them, and a re-paired tablet can re-claim the same kid without recreating
+the row.
+
 **Per-request auth** — every non-`/api/family` and non-`/api/pair`
 request carries `Authorization: Bearer <device-token>`. The Worker
 hashes the token, looks it up in `devices`, checks `revoked = 0`, and
 updates `last_seen`. A device inherits its family membership from its
 row; a device claims a kid identity by POSTing to
 `/api/kids/:id/claim` at first-run — this is where the kid picks their
-avatar. PIN is client-side only in v1 — the server treats device tokens
-as authoritative — but the schema keeps `pin_hash` so a "must PIN before
-you can act on your pet" gate can land later without a migration.
+avatar (or confirms one already set at kid-creation time). PIN is
+client-side only in v1 — the server treats device tokens as
+authoritative — but the schema keeps `pin_hash` so a "must PIN before you
+can act on your pet" gate can land later without a migration. Plain
+SHA-256 of a 4-digit PIN (even with a per-kid salt) is trivially
+brute-forced — before that gate is server-enforced, `pin_hash` must
+switch to argon2/scrypt with a real work factor. Schema-comment reminder
+lives in §9 Step 5.
 
 **Family-scope check on every write** — the Worker looks up the target
 pet's `kid_id → family_id` and confirms it matches the acting device's
@@ -672,14 +729,16 @@ enforces the once-a-day rate limit via `helper_action_usage`
 1. **MVP (done)**: single pet, stats/mood engine, species picker, local
    persistence — this is `index.html` today.
 2. **Real art (in progress)**: pose-swapping renderer and fallback chain
-   are built, and five species (T-Rex, unicorn, dragon, hippocampus,
-   pegasus) each have all four required poses (idle/happy/sad/sleep) plus
-   palette-remap color variants. Remaining: wire the completed wolf
-   sprites into `SPECIES_POSES` + the picker; drop phoenix/griffin/blob
-   from the picker; draw the four action poses (eat, eat-chew, play,
-   bath) per species and the three shared item sprites (apple, soap,
-   ball); build the travelling-item choreography and the shake/bounce
-   CSS loops (no art dependency for the choreography itself).
+   are built, and six species (T-Rex, unicorn, dragon, hippocampus,
+   pegasus, wolf) each have all four required poses (idle/happy/sad/sleep)
+   plus palette-remap color variants. Remaining: wire wolf into
+   `SPECIES_POSES` + the picker (its sprites and palette/reference files
+   are on disk, just not referenced by the manifest yet); drop
+   phoenix/griffin/blob from the picker; draw the four action poses (eat,
+   eat-chew, play, bath) per species and the three shared item sprites
+   (apple, soap, ball); build the travelling-item choreography and the
+   shake/bounce CSS loops (no art dependency for the choreography
+   itself).
 3. **Backend + Social v1 (next)**: Cloudflare Workers with `[assets]`
    binding + D1. `SIGNUP_SECRET`-gated family creation + pairing-code kid
    device pairing (§7). Server-side pet state with lazy decay, polling
@@ -726,8 +785,12 @@ functions/api/           Pages-Functions-style API handlers:
   family.js              POST — create family (SIGNUP_SECRET-gated).
   pairing-code.js        POST — mint a pairing code (auth'd).
   pair.js                POST — redeem a pairing code, get device token.
-  kids.js                GET, POST — list/create kids.
-  kids/[id].js           PATCH — update kid profile.
+  kids.js                GET, POST — list/create kids (family-scoped
+                         from the device token; the setup UI on the
+                         bootstrap device seeds one row per sibling).
+  kids/[id].js           PATCH — update kid profile (display_name,
+                         avatar). PIN edits go through here too once
+                         `pin_hash` is upgraded per §7.
   kids/[id]/claim.js     POST — bind current device to a kid.
   devices.js             GET — list family's devices.
   devices/[id].js        DELETE — revoke a device.
@@ -846,7 +909,12 @@ CREATE TABLE kids (
   family_id    TEXT NOT NULL REFERENCES families(id),
   display_name TEXT NOT NULL,
   avatar       TEXT,                  -- preset key or emoji
-  pin_hash     TEXT,                  -- SHA-256 of PIN + kid_id salt; nullable in v1
+  -- PIN is client-side only in v1 (§7). Plain SHA-256 of a 4-digit PIN
+  -- with a per-kid salt is trivially brute-forced (10 000 candidates,
+  -- no work factor) — before this column ever gates a server-side
+  -- action, migrate to argon2/scrypt with a real work factor. Nullable
+  -- until then; do not read it as authoritative.
+  pin_hash     TEXT,
   created_at   INTEGER NOT NULL
 );
 CREATE INDEX idx_kids_family ON kids(family_id);
@@ -1044,7 +1112,6 @@ public:
 .wrangler/
 functions/
 dist/
-docs/
 schema.sql
 wrangler.toml
 .assetsignore
@@ -1054,6 +1121,9 @@ node_modules/
 package.json
 package-lock.json
 ```
+
+(`docs/` isn't listed because the repo has no `docs/` directory today —
+add the line if that changes.)
 
 **The `.git/` line is not optional.** Wrangler's default ignore list
 only covers `.assetsignore`, `_redirects`, and `_headers` — it does
@@ -1118,6 +1188,31 @@ curl -X POST https://critteria.immotus.app/api/family \
   -d '{"signupSecret":"wrong","deviceId":"x","label":"x"}'
 # expect 401/403. A 200 here means your instance is open to the world —
 # stop and audit /api/family before continuing.
+```
+
+Then exercise the pairing round-trip — the mechanism every second-onwards
+tablet uses (§7). Use the bootstrap device's token from the family-
+creation step:
+
+```
+# Mint a pairing code from the bootstrap device.
+curl -X POST https://critteria.immotus.app/api/pairing-code \
+  -H "Authorization: Bearer $BOOTSTRAP_TOKEN"
+# expect a JSON body with a 6-char code and expires_at (5 min out).
+
+# Redeem it from a "second tablet" — a fresh deviceId, no auth header.
+curl -X POST https://critteria.immotus.app/api/pair \
+  -H 'Content-Type: application/json' \
+  -d '{"code":"<the 6-char code>","deviceId":"'"$(uuidgen)"'","label":"second tablet"}'
+# expect a JSON body with a device token for the new tablet.
+
+# Confirm single-use: redeeming the same code again must fail.
+curl -X POST https://critteria.immotus.app/api/pair \
+  -H 'Content-Type: application/json' \
+  -d '{"code":"<the same 6-char code>","deviceId":"'"$(uuidgen)"'","label":"x"}'
+# expect 4xx (code already used). A 200 means the used_at guard on
+# pairing_codes isn't wired — audit /api/pair before continuing, or
+# any leaked code becomes reusable.
 ```
 
 *Checkpoint:* `SELECT * FROM families;` in the D1 Console shows one
