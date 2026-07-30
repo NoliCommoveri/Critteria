@@ -1,0 +1,15 @@
+name = "critteria"
+main = "./dist/worker/index.js"
+compatibility_date = "2026-07-30"
+
+[assets]
+directory = "./"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "critteria"
+# Fill in with the real ID from SPEC.md §9 Step 4 (D1 dashboard's Overview
+# page, or `npx wrangler d1 list`) before merging to main — a placeholder
+# here will fail the git-connected deploy, not just the API routes.
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
