@@ -1313,6 +1313,19 @@ knowing about since it's the kind of typo that a manual click-through
 would probably have also caught, but the scripted version caught it
 immediately and made the fix easy to verify.
 
+**"Add another tablet"** followed as a fast-follow, closing the one gap
+the first pass left: minting a pairing code originally required a raw
+curl/PowerShell call to `POST /api/pairing-code` (the manual test in
+Step 9 above), because the frontend only had the *redeem* side of
+pairing (the "I have a code" form). A 📲 button next to the rename/
+connect icons — visible once `device.token` exists, same gate as the
+kid-picker/pet flow, since the endpoint has no "must have claimed a
+kid" requirement — opens a screen that mints a code on entry, displays
+it as two space-grouped triplets with a live countdown to its 5-minute
+expiry, and offers "Get a new code" to remint on demand. No PowerShell
+needed to add the second-through-fourth kid's tablet once the family
+itself exists.
+
 Not wired into the frontend by this pass, left for later: gifting
 (`POST /api/pets/:id/gift` exists server-side, no UI button for it) and
 the presence badge (`GET /api/pets/:id/events` returns one, nothing
