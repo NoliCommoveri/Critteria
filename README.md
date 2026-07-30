@@ -1,4 +1,4 @@
-# Critteria
+# Critteria App
 
 A Tamagotchi-style virtual pet for four siblings (and, later, invited
 friends), built as a web app / PWA and hosted at
