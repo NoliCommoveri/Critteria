@@ -1180,6 +1180,7 @@
           state.colorVariant = btn.dataset.variant;
           saveState();
           render();
+          if (device.petId) syncColorVariant(btn.dataset.variant);
         });
       });
     }
@@ -1316,6 +1317,22 @@
       var data = await api('/api/pets/' + device.petId + '/action', {
         method: 'POST',
         body: { action: serverAction }
+      });
+      applyServerPet(data.pet);
+      render();
+    } catch (err) {
+      statusText.textContent = "Couldn't reach the server — try again in a moment.";
+    }
+  }
+
+  // Counterpart to the local-only branch in the swatch click handler above:
+  // once a pet is synced, colorVariant has to be persisted server-side too,
+  // or the next pollPet() (every ~5s) overwrites it with the stale value.
+  async function syncColorVariant(variant) {
+    try {
+      var data = await api('/api/pets/' + device.petId, {
+        method: 'PATCH',
+        body: { colorVariant: variant }
       });
       applyServerPet(data.pet);
       render();

@@ -98,8 +98,8 @@ function applyDecay(pet, now) {
 __name(applyDecay, "applyDecay");
 async function persistPet(db, pet) {
   await db.prepare(
-    "UPDATE pets SET hunger=?, happiness=?, energy=?, cleanliness=?, sleeping=?, last_updated=? WHERE id=?"
-  ).bind(pet.hunger, pet.happiness, pet.energy, pet.cleanliness, pet.sleeping ? 1 : 0, pet.last_updated, pet.id).run();
+    "UPDATE pets SET hunger=?, happiness=?, energy=?, cleanliness=?, sleeping=?, color_variant=?, last_updated=? WHERE id=?"
+  ).bind(pet.hunger, pet.happiness, pet.energy, pet.cleanliness, pet.sleeping ? 1 : 0, pet.color_variant, pet.last_updated, pet.id).run();
 }
 __name(persistPet, "persistPet");
 function serializePet(pet) {
@@ -322,6 +322,39 @@ async function onRequestGet2({ request, env, params }) {
   return Response.json({ pet: serializePet(decayed) });
 }
 __name(onRequestGet2, "onRequestGet");
+async function onRequestPatch2({ request, env, params }) {
+  const device = await authenticate(request, env);
+  if (!device) return unauthorized();
+  if (!device.kidId) {
+    return Response.json({ error: "this device has not claimed a kid yet" }, { status: 403 });
+  }
+  let body;
+  try {
+    body = await request.json();
+  } catch (e) {
+    return Response.json({ error: "invalid JSON body" }, { status: 400 });
+  }
+  const colorVariant = body && body.colorVariant;
+  if (typeof colorVariant !== "string") {
+    return Response.json({ error: "colorVariant is required" }, { status: 400 });
+  }
+  const pet = await env.DB.prepare(
+    `SELECT pets.*, kids.family_id AS owner_family_id
+     FROM pets JOIN kids ON kids.id = pets.kid_id
+     WHERE pets.id = ?`
+  ).bind(params.id).first();
+  if (!pet || pet.owner_family_id !== device.familyId) {
+    return Response.json({ error: "not found" }, { status: 404 });
+  }
+  if (pet.kid_id !== device.kidId) {
+    return Response.json({ error: "that action is only available on your own pet" }, { status: 403 });
+  }
+  const decayed = applyDecay(pet, Date.now());
+  decayed.color_variant = colorVariant;
+  await persistPet(env.DB, decayed);
+  return Response.json({ pet: serializePet(decayed) });
+}
+__name(onRequestPatch2, "onRequestPatch");
 
 // api/devices.js
 async function onRequestGet3({ request, env }) {
@@ -528,7 +561,7 @@ async function onRequestPost8({ request, env }) {
 }
 __name(onRequestPost8, "onRequestPost");
 
-// ../.wrangler/tmp/pages-AZ1zz0/functionsRoutes-0.026088842441424287.mjs
+// ../.wrangler/tmp/pages-5yZHT1/functionsRoutes-0.8806679442421617.mjs
 var routes = [
   {
     routePath: "/api/kids/:id/claim",
@@ -578,6 +611,13 @@ var routes = [
     method: "GET",
     middlewares: [],
     modules: [onRequestGet2]
+  },
+  {
+    routePath: "/api/pets/:id",
+    mountPath: "/api/pets",
+    method: "PATCH",
+    middlewares: [],
+    modules: [onRequestPatch2]
   },
   {
     routePath: "/api/devices",
