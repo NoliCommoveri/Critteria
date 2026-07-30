@@ -626,10 +626,49 @@ the same shape as a `SPECIES_POSES` registration.
   keyframes themselves (`shake-light`/`-medium`/`-big`) are `infinite`
   loops, so they keep shaking for the full length of whichever stage
   applies them.
-- ⬜ Unicorn, pegasus, hippocampus, dragon, wolf — no hatch art yet;
-  picking these species still skips straight to instant pet creation.
-  Remaining work is art-only (four frames each), no further code changes
-  needed beyond their `HATCH_SEQUENCES` entry.
+- ✅ Dragon — full 4-frame set drawn and wired (2026-07-30). Generated as a
+  single 4-panel sheet (egg/crack1/crack2/hatch together, like a mini
+  pose-sheet) rather than one-off calls, which is what kept scale and
+  ground line consistent across frames without the drift §4 warns about
+  for 8-cell sheets — four cells held fine. Departs from the T-Rex frames
+  in one deliberate way: instead of a dirt nest, the egg sits on **a bed
+  of glowing hot coals/embers**, matching the "fire dragon" framing. Coal
+  needed its own small 6-colour sub-ramp
+  (`reference/dragon-hatch-coal-palette.txt`/`.png` — deep maroon through
+  red-orange to golden ember) layered on top of the locked
+  `dragon-palette.txt`, since that ramp is entirely purple/blue with
+  nothing warm in it.
+
+  Building this also surfaced a real gap in the locked dragon ramp: every
+  other species' palette has a near-white top value for highlights/eye-
+  whites (unicorn `#fdeff5`, pegasus `#fef2d9`, hippocampus `#fbfcfb`,
+  wolf `#F5F3F3`) but dragon's lightest entry was a saturated light blue
+  (`#b3d5f6`). Without a true near-white to snap to, the egg's shell-shine
+  and the hatchling's eye-white quantized inconsistently pixel-by-pixel
+  between mismatched blues — visible as salt-and-pepper speckle rather
+  than a flat highlight band, not a downsampling artifact (the pre-
+  quantize box-filtered image was clean; confirmed by inspecting it
+  directly). Fixed by adding `#eae4fa` (pale lavender-white, hue-shifted
+  per the same one-tint-of-the-body-hue pattern every other species'
+  near-white follows) as a 20th entry to `dragon-palette.txt`. Reference-
+  only file, not loaded at runtime, so this didn't touch any shipped
+  sprite. A first generation attempt (rejected) had a genuinely messier,
+  fragmented highlight shape in the *source* art itself, not a cleanup
+  bug — the regenerated source used for the shipped frames has a clean
+  flat highlight blob much closer to T-Rex's, confirmed by inspecting the
+  pre-quantize downsample before and after.
+
+  Baseline registration matches the rest of the dragon family (top row
+  13, bottom row 116 — `dragon.png`/`-happy`/`-sad`/`-sleep`'s own ground
+  line) rather than the T-Rex family's row-117 baseline; the two species'
+  egg sets aren't required to share a ground line with each other, only
+  internally with their own species' poses.
+  `reference/dragon-egg-reference-4x.png` holds all four hatch frames (4x)
+  for attaching when generating dragon's action poses next.
+- ⬜ Unicorn, pegasus, hippocampus, wolf — no hatch art yet; picking these
+  species still skips straight to instant pet creation. Remaining work is
+  art-only (four frames each), no further code changes needed beyond
+  their `HATCH_SEQUENCES` entry.
 
 ### Species selection
 Species is picked once, at first launch, and then locked for the life of
