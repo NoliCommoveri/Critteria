@@ -1565,7 +1565,10 @@
     hatchContinueBtn.style.display = 'none';
     hatchNameInput.value = '';
     setHatchFrame(seq.frames.egg, '');
-    hatchCaption.textContent = "What's this? A " + seq.label + ' egg...';
+    // Only the opening line names the container, so it's the only caption a
+    // non-egg species has to override (hippocampus hatches from an oyster).
+    // Every later beat says "the baby <label>" or nothing container-specific.
+    hatchCaption.textContent = seq.intro || "What's this? A " + seq.label + ' egg...';
 
     // Double rAF forces a style flush between removing 'lit' and re-adding
     // it, so the opacity transition actually runs instead of collapsing

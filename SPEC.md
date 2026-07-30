@@ -668,9 +668,9 @@ the same shape as a `SPECIES_POSES` registration.
 - 📋 Hippocampus — **planned, not drawn yet**; full plan in "Hippocampus
   hatch sequence (planned)" below. Departs from the other two in that it
   isn't an egg at all: a clam/oyster on the seabed that opens to reveal
-  the baby. That framing is the one case that needs a small code change
-  beyond the usual one-line `HATCH_SEQUENCES` entry, since the captions
-  are currently hardcoded egg-language.
+  the baby. Everything else about the sequence — beat timing, shake
+  classes, frame keys, crack sound — is unchanged; the only code delta
+  was making the opening caption overridable, which is already in.
 - ⬜ Unicorn, pegasus, wolf — no hatch art yet; picking these species
   still skips straight to instant pet creation. Remaining work is
   art-only (four frames each), no further code changes needed beyond
@@ -753,28 +753,23 @@ sub-ramp, ghost-overlay each frame against the previous to confirm the
 shell hasn't moved or resized, and save
 `reference/hippocampus-egg-reference-4x.png` with all four at 4×.
 
-**Code change required.** The captions are hardcoded egg-language
-(`"What's this? A " + label + " egg..."` and `"the baby " + label + " is
-trying to get out!"`), so a clam needs per-species overrides. Add an
-optional `captions` object to the `HATCH_SEQUENCES` entry with four keys
-— `intro`, `stir`, `opening`, `reveal` — each falling back to today's
-text when absent, so T-Rex and dragon are untouched:
+**Captions — one line, already wired.** Only the opening caption names
+the container (`"What's this? A " + label + " egg..."`); every later beat
+is either container-neutral ("Something is happening!") or says "the baby
+`<label>`", all of which are true of an oyster. So the sequence needs a
+single override, not a caption system: `startHatchSequence` now reads an
+optional `intro` string off the `HATCH_SEQUENCES` entry and falls back to
+the egg wording when it's absent, leaving T-Rex and dragon untouched.
+Hippocampus's entry sets:
 
-- `intro` → "What's this? A big shiny clam..."
-- `stir` → "Something is happening!" (default is already right)
-- `opening` → "Look, the shell is opening!"
-- `reveal` → "There's a baby hippocampus inside!"
+> `intro: 'Look, a giant oyster. I wonder what’s inside?'`
 
-`reveal` is new rather than an override: today the 15.2s beat jumps
-straight to the name prompt. Show `reveal` on the `hatch` frame and move
-the name prompt to the +1s callback that already exists for settling the
-shake, so the reveal lands as its own beat before the kid is asked to
-type. That's a generic improvement other species can adopt ("It's a baby
-T-Rex!") rather than hippocampus-only plumbing.
+(Typographic apostrophe, as the existing captions use — a straight one
+would close the single-quoted string.)
 
-The synthesized `playCrackSound()` noise burst still works as shell-on-
-shell knock and needs no change; dropping its filter frequency for a
-duller, wetter knock is optional polish, not part of this.
+That is the whole code delta — with it in place, wiring the art is still
+the promised one-entry registration. The synthesized `playCrackSound()`
+noise burst reads fine as shell-on-shell knock and stays as-is.
 
 ### Species selection
 Species is picked once, at first launch, and then locked for the life of
