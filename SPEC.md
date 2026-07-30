@@ -665,8 +665,9 @@ the same shape as a `SPECIES_POSES` registration.
   internally with their own species' poses.
   `reference/dragon-egg-reference-4x.png` holds all four hatch frames (4x)
   for attaching when generating dragon's action poses next.
-- 🟨 Hippocampus — **all four frames drawn and wired**, frame 3 pending a
-  re-roll (see below); plan in
+- ✅ Hippocampus — **complete**: all four frames drawn, cleaned, and
+  wired, plus a bubble layer unique to this species. Plan and build notes
+  in
   "Hippocampus hatch sequence (planned)" below. Departs from the other
   two in that it isn't an egg at all: a mussel shell on the seabed that
   opens to reveal the baby. Everything else about the sequence — beat
@@ -777,15 +778,50 @@ the same shape as a `SPECIES_POSES` registration.
   hippocampus now plays the full sequence instead of falling through to
   instant creation.
 
-  **Known drift, not yet corrected:** the sand's width across the four
-  frames measures 103.5 / 104.4 / 100.3 / 107.7 canvas px, because the
-  crop scales each frame by the *shell* and the generator did not hold
-  the sand/shell ratio constant (1.005 / 1.014 / 0.974 / 1.046). The
-  ground therefore breathes by up to 7px between beats. Anchoring on the
-  sand instead just moves the error onto the shell, since frames 3–4
-  legitimately change the lid's angle; anchoring on the mean of the two
-  halves it, to about 3.7px on each. Worth doing once frame 3 is final,
-  not before.
+  **Anchor the mean of shell and sand, not either one.** Scaling each
+  frame by the shell alone pinned the shell at exactly 103px but let the
+  sand breathe 7.4px across the set (103.5 / 104.4 / 100.3 / 107.7),
+  because the generator never held the sand/shell ratio constant
+  (1.005 / 1.014 / 0.974 / 1.046). Scaling by the sand alone just moves
+  that same 7.4px onto the shell, since frames 3–4 legitimately change
+  the lid's angle and so genuinely change the shell's silhouette width.
+  Anchoring the mean of the two splits the error: all four frames were
+  re-cleaned that way and both now spread 3.7px. Vertically the anchor is
+  unchanged — the sand's bottom row is the ground line at row 116.
+
+  The re-clean also made the per-frame fixes algorithmic rather than
+  coordinate-based, so they survive a change of scale: stray-glow revert
+  and specular extension run only on frames with no creature in them, and
+  the white-speckle rule is likewise gated. That gate matters — run
+  unguarded on the reveal frame it deletes the hatchling's eye glints,
+  which are legitimate 1px white components. The rule cannot tell a
+  sparkle from a speck, so it only runs where sparkles cannot occur.
+
+  **Bubbles are a layer, not art.** `assets/bubble-sm/-md/-lg.png` are
+  hand-authored rather than generated — 5, 7 and 9px hollow rims with a
+  single specular pixel, on 16×16 canvases, every pixel a locked-ramp
+  entry. At that size a generated bubble would be a lumpy circle needing
+  cleanup, where placing ~15 pixels by hand costs nothing and quantizes
+  to nothing. The rim is `#8fd1d3` rather than the softer `#a4e4de`: the
+  stage's own background is `#cdeaf7`, and `#a4e4de` sits only 48 from it
+  in RGB where `#8fd1d3` sits 76, so the softer value nearly vanished
+  against the water.
+
+  They are spawned as elements into `.hatch-bubbles`, a sibling of the
+  sprite inside `.hatch-stage`, for the reason §5 keeps items out of
+  poses: the shake classes transform `.hatch-sprite`, and bubbles drawn
+  into a frame would shake with the shell instead of rising past it —
+  besides sitting frozen for the 3–4s a frame is on screen. The layer
+  paints above the sprite (bubbles pass in front of the lid) but below
+  `.hatch-dark`, so nothing shows during the dark beat. Each bubble is
+  sized from the sprite's *rendered* width — `16 × (spriteWidth / 128)` —
+  so a bubble pixel matches a shell pixel at any stage size; a fixed 16px
+  renders visibly finer than the art it sits next to.
+
+  Rates follow the beats: one every 700ms from the first crack, 430ms
+  while the shell strains open, then settling to 1000ms after the reveal.
+  `bubbles: true` is opt-in per species — T-Rex and dragon hatch on a
+  dirt nest and a bed of coals, where rising bubbles would be nonsense.
 
   `reference/hippocampus-egg-reference-4x.png` holds all four frames at
   4× (2048×512). Unlike
