@@ -9,7 +9,4 @@ binding = "ASSETS"
 [[d1_databases]]
 binding = "DB"
 database_name = "critteria"
-# Fill in with the real ID from SPEC.md §9 Step 4 (D1 dashboard's Overview
-# page, or `npx wrangler d1 list`) before merging to main — a placeholder
-# here will fail the git-connected deploy, not just the API routes.
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "12fe0a08-9d2b-4a68-bde5-a8729de8d916"
