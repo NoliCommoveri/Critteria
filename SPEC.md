@@ -720,12 +720,26 @@ the same shape as a `SPECIES_POSES` registration.
   drops every component but the largest.
 
   `hippocampus-egg-crack2.png` (half open, rose interior visible, the
-  baby's head peeking over the lower lip) is frame 3, and the first frame
-  where the shell interior and the creature share a canvas. Registration
-  held again — shell box x 12–116 against frame 1's x 12–115, sand bottom
-  on row 116 — even though the raw generation came back 8.3% smaller,
-  because the sand/shell ratio stayed at 1.004 so the whole composition
-  scaled together. Content occupies rows 31–116.
+  baby sitting in the bowl) is frame 3, and the first frame where the
+  shell interior and the creature share a canvas. Registration held again
+  — shell box x 11–115 against frame 1's x 12–115, sand bottom on row
+  116 — even though the raw generation came back 6.9% smaller, because
+  the whole composition scaled together. Content occupies rows 31–116,
+  leaving 18 rows of headroom; frame 4 does not need them, since the lid
+  is already the tallest element and a hatchling sitting up grows into
+  the bowl's empty space rather than above the shell.
+
+  **Check the lid's form, not just its registration.** Frame 3 took two
+  generations, and the first one passed every automated check —
+  registration within a pixel, palette clean, speckle 3.1% — while being
+  wrong in a way none of those measure: it drew the opened upper shell as
+  a *concave bowl*, a second cup facing the viewer, where frames 1–2
+  establish it as a convex ridged dome. Rose interior filled 35% of the
+  lid region against the correct version's 28%, because a lid turned
+  inside-out shows lining that should not be visible at all. Registration
+  metrics compare bounding boxes; they say nothing about whether a form
+  stayed the same solid. When a frame rotates a part, compare that part's
+  *shape* against the earlier frames by eye before cleaning it.
 
   **Never put the whole combined palette in front of the quantizer.**
   Frame 3 was first run against all 17 colours, and `#0f445c` — a locked
