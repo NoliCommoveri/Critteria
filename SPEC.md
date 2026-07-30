@@ -665,10 +665,116 @@ the same shape as a `SPECIES_POSES` registration.
   internally with their own species' poses.
   `reference/dragon-egg-reference-4x.png` holds all four hatch frames (4x)
   for attaching when generating dragon's action poses next.
-- ⬜ Unicorn, pegasus, hippocampus, wolf — no hatch art yet; picking these
-  species still skips straight to instant pet creation. Remaining work is
+- 📋 Hippocampus — **planned, not drawn yet**; full plan in "Hippocampus
+  hatch sequence (planned)" below. Departs from the other two in that it
+  isn't an egg at all: a clam/oyster on the seabed that opens to reveal
+  the baby. That framing is the one case that needs a small code change
+  beyond the usual one-line `HATCH_SEQUENCES` entry, since the captions
+  are currently hardcoded egg-language.
+- ⬜ Unicorn, pegasus, wolf — no hatch art yet; picking these species
+  still skips straight to instant pet creation. Remaining work is
   art-only (four frames each), no further code changes needed beyond
   their `HATCH_SEQUENCES` entry.
+
+#### Hippocampus hatch sequence (planned)
+
+A seahorse-dragon shouldn't crack out of a bird's egg, so the hippocampus
+sequence swaps the shell for a **clam/oyster resting on the seabed**,
+the same way dragon swapped the dirt nest for hot coals — the beat
+structure, timing, shake classes, and frame *keys* are unchanged, only
+what's drawn inside them and what the captions say.
+
+**Beat → frame mapping.** Three story beats over four frames; the middle
+beat gets two frames because "it's opening" is the part that needs to
+read as motion in a slideshow of stills:
+
+| Key | File | Beat | What's drawn | Shake |
+|---|---|---|---|---|
+| `egg` | `hippocampus-egg.png` | "it's a clam" | Clam sealed shut, ridged shell, sitting in a low mound of sand | none → `shake-light` |
+| `crack1` | `hippocampus-egg-crack1.png` | "it's opening" (1) | Shell parted a sliver; a thin flat band of glow and 2–3 bubbles escaping the gap | `shake-light` |
+| `crack2` | `hippocampus-egg-crack2.png` | "it's opening" (2) | Shell half open, hinged back ~45°; nacre interior visible; two eyes and the snout tip peeking over the lower lip | `shake-medium` |
+| `hatch` | `hippocampus-hatch.png` | "a baby hippocampus!" | Shell wide open, baby sitting up in the lower valve — the direct analogue of `dragon-hatch.png`'s hatchling-in-eggshell | `shake-big` → still |
+
+Keep the `-egg` filenames even though nothing is an egg. The names track
+the *slot* (they're what every other species uses, and the `frames` keys
+in `HATCH_SEQUENCES` are `egg`/`crack1`/`crack2`/`hatch` regardless), and
+the path values are free-form strings, so this is a naming-consistency
+call rather than a load-bearing one.
+
+**Registration — the one real trap here.** The other two species' first
+three frames are a tall egg that fills the canvas by height (rows 13–116).
+A closed clam is wide and low, so it can't be height-filled without
+becoming a beachball. Register it like the curled `sleep` poses instead:
+
+- Fix the **shell width** once at ~103px (≈81% width fill, the number
+  `hippocampus-sleep.png` already landed on) and hold that width across
+  all four frames. Register on the *shell's* bounding box, not the
+  composite — if the frames are each fit to the canvas independently, the
+  shell visibly grows as the baby adds height, and the sequence reads as
+  a zoom instead of an opening.
+- Bottom row **116** on every frame, matching the four existing
+  hippocampus poses (per the dragon precedent, an egg set only has to
+  share a ground line with its own species).
+- Total height grows frame to frame as the lid swings back, capped at top
+  row **13** on `hatch` so the tallest frame still fits the shared
+  104px band. Closed shell + sand ≈ 45px tall; budget the rest for the
+  lid and the baby.
+
+**Palette.** The creature stays on the locked 10-colour
+`reference/hippocampus-palette.txt` — the baby has to match
+`hippocampus.png` because the pet screen cuts straight to that idle
+sprite seconds later. The shell and sand don't exist on that ramp (it's
+entirely teal/aqua plus a near-white), so they need a sub-ramp layered on
+top, exactly as dragon's coals did:
+`reference/hippocampus-hatch-shell-palette.txt`, ~6–8 entries — 3 shell
+exterior (deep mauve ridge shadow → dusty mauve → warm shell pink), 2
+nacre interior, 2 sand. Reuse the locked ramp's `#fbfcfb` for the pearl
+highlight rather than adding a second near-white; that's the mismatch
+that produced dragon's salt-and-pepper speckle. Same for the glow leaking
+out of the gap — build it from the ramp's existing `#c6eee8`/`#a4e4de` as
+flat bands, never a gradient.
+
+**Generation.** One 4-panel sheet in a single call, as dragon did — four
+cells held registration fine where eight drifted. Attach both
+`reference/hippocampus-reference-4x.png` (so the baby reads as the same
+character) and the two palette PNGs. Ask for: flat cel-shaded pixel art,
+no anti-aliasing, hue-shifted dark-teal outline, flat `#FF00FF`
+background, no props/grass/shadow beyond the sand the clam sits in, and
+the same shell size in all four cells. Baby proportions are newborn —
+bigger head, shorter snout, stubbier fins, tail curled in the shell — and
+facing the same 3/4-left direction as `hippocampus.png` so the cut to the
+pet screen isn't a flip.
+
+**Cleanup.** Standard pipeline, with the one landmine this species has
+already hit once: **key magenta to alpha *before* cropping**, or the
+margin inside the crop box quantizes into a visible rectangle (see
+`hippocampus-sad.png` above). Then quantize onto locked ramp + shell
+sub-ramp, ghost-overlay each frame against the previous to confirm the
+shell hasn't moved or resized, and save
+`reference/hippocampus-egg-reference-4x.png` with all four at 4×.
+
+**Code change required.** The captions are hardcoded egg-language
+(`"What's this? A " + label + " egg..."` and `"the baby " + label + " is
+trying to get out!"`), so a clam needs per-species overrides. Add an
+optional `captions` object to the `HATCH_SEQUENCES` entry with four keys
+— `intro`, `stir`, `opening`, `reveal` — each falling back to today's
+text when absent, so T-Rex and dragon are untouched:
+
+- `intro` → "What's this? A big shiny clam..."
+- `stir` → "Something is happening!" (default is already right)
+- `opening` → "Look, the shell is opening!"
+- `reveal` → "There's a baby hippocampus inside!"
+
+`reveal` is new rather than an override: today the 15.2s beat jumps
+straight to the name prompt. Show `reveal` on the `hatch` frame and move
+the name prompt to the +1s callback that already exists for settling the
+shake, so the reveal lands as its own beat before the kid is asked to
+type. That's a generic improvement other species can adopt ("It's a baby
+T-Rex!") rather than hippocampus-only plumbing.
+
+The synthesized `playCrackSound()` noise burst still works as shell-on-
+shell knock and needs no change; dropping its filter frequency for a
+duller, wetter knock is optional polish, not part of this.
 
 ### Species selection
 Species is picked once, at first launch, and then locked for the life of
