@@ -30,8 +30,8 @@ export function applyDecay(pet, now) {
 
 export async function persistPet(db, pet) {
   await db.prepare(
-    'UPDATE pets SET hunger=?, happiness=?, energy=?, cleanliness=?, sleeping=?, last_updated=? WHERE id=?'
-  ).bind(pet.hunger, pet.happiness, pet.energy, pet.cleanliness, pet.sleeping ? 1 : 0, pet.last_updated, pet.id).run();
+    'UPDATE pets SET hunger=?, happiness=?, energy=?, cleanliness=?, sleeping=?, color_variant=?, last_updated=? WHERE id=?'
+  ).bind(pet.hunger, pet.happiness, pet.energy, pet.cleanliness, pet.sleeping ? 1 : 0, pet.color_variant, pet.last_updated, pet.id).run();
 }
 
 export function serializePet(pet) {

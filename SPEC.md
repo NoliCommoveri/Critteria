@@ -750,12 +750,14 @@ enforces the once-a-day rate limit via `helper_action_usage`
    family token still plays entirely offline exactly as before (species
    picker → local decay/actions), and a device that already has a
    locally-raised pet is never force-migrated — connecting is an opt-in
-   🔗 tap that upload-creates its pet server-side. Not yet wired in the
-   UI: gifting (`POST /api/pets/:id/gift` exists server-side, no
-   frontend for it) and the presence badge from `pet_events`; renaming
-   and color-variant changes also stay device-local since there's no
-   `PATCH /api/pets/:id` yet. Concrete deploy recipe and every gotcha
-   we've hit are in §9.
+   🔗 tap that upload-creates its pet server-side. `PATCH /api/pets/:id`
+   now persists color-variant swatch changes server-side (previously the
+   swatch click only updated local state, so the next 5 s poll silently
+   reverted it — fixed). Not yet wired in the UI: gifting
+   (`POST /api/pets/:id/gift` exists server-side, no frontend for it)
+   and the presence badge from `pet_events`; renaming stays device-local
+   since there's no rename endpoint yet. Concrete deploy recipe and
+   every gotcha we've hit are in §9.
 4. **End-state features**: lifecycles/aging, accessories, locations
    (color variants already landed on `main` as palette-remap work).
 5. **Nice-to-haves**: Durable Objects + WebSocket for live co-visit
@@ -806,6 +808,7 @@ functions/api/           Pages-Functions-style API handlers:
   devices/[id].js        DELETE — revoke a device.
   pets.js                GET, POST — list/create pets in family.
   pets/[id].js           GET — server-computed pet state (lazy decay).
+                         PATCH — update color_variant (own pet only).
   pets/[id]/action.js    POST — feed/play/clean/sleep/wake (own pet
                          always; sibling pet gated by helper_action_usage).
   pets/[id]/gift.js      POST — send a gift (writes pet_events).
