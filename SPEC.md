@@ -665,7 +665,7 @@ the same shape as a `SPECIES_POSES` registration.
   internally with their own species' poses.
   `reference/dragon-egg-reference-4x.png` holds all four hatch frames (4x)
   for attaching when generating dragon's action poses next.
-- 🟨 Hippocampus — **frames 1–2 of 4 drawn**, plan for the rest in
+- 🟨 Hippocampus — **frames 1–3 of 4 drawn**, plan for the rest in
   "Hippocampus hatch sequence (planned)" below. Departs from the other
   two in that it isn't an egg at all: a mussel shell on the seabed that
   opens to reveal the baby. Everything else about the sequence — beat
@@ -719,8 +719,37 @@ the same shape as a `SPECIES_POSES` registration.
   components disjoint from the main silhouette — so the cleanup script
   drops every component but the largest.
 
-  `reference/hippocampus-egg-reference-4x.png` holds both frames so far
-  at 4× (1024×512) for attaching when generating frames 3–4. Unlike
+  `hippocampus-egg-crack2.png` (half open, rose interior visible, the
+  baby's head peeking over the lower lip) is frame 3, and the first frame
+  where the shell interior and the creature share a canvas. Registration
+  held again — shell box x 12–116 against frame 1's x 12–115, sand bottom
+  on row 116 — even though the raw generation came back 8.3% smaller,
+  because the sand/shell ratio stayed at 1.004 so the whole composition
+  scaled together. Content occupies rows 31–116.
+
+  **Never put the whole combined palette in front of the quantizer.**
+  Frame 3 was first run against all 17 colours, and `#0f445c` — a locked
+  ramp entry meant for the creature's dark accents — scattered
+  baby-coloured pixels across the entire shell. It is not a
+  minimum-distance failure; every pair in the palette is ≥60 apart. It is
+  that `#0f445c` lands *on the line between* two other entries: the
+  midpoint of the shell's dark band `#4c5566` and the outline `#103133`
+  sits 34.7 from `#0f445c` but 43.3 from either endpoint, so every
+  antialiased shell edge snapped to it. Minimum pairwise distance says
+  nothing about this case — an entry can be far from all others and still
+  sit inside the segment joining two of them. Dropping `#0f445c` and the
+  redundant near-whites (14 colours instead of 17) cut speckle from 3.9%
+  to 3.1% and confined the baby's body colours to x 63–82, the head,
+  where they belong. Quantize each frame against the colours that frame
+  legitimately contains, nothing more.
+
+  The related trap: the stray-glow revert rule from frame 2 must **not**
+  run on frames containing the creature. The baby's light teals are the
+  same values as the glow, so the rule would erase its highlights as
+  "disconnected glow". Frame 3 relies on the tightened palette instead.
+
+  `reference/hippocampus-egg-reference-4x.png` holds the three frames so
+  far at 4× (1536×512) for attaching when generating frame 4. Unlike
   dragon's hatch reference it sits on flat `#FF00FF` rather than a dark
   backdrop, so it doubles as a demonstration of the background the next
   generation must produce.
