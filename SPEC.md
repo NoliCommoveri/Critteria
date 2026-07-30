@@ -665,12 +665,38 @@ the same shape as a `SPECIES_POSES` registration.
   internally with their own species' poses.
   `reference/dragon-egg-reference-4x.png` holds all four hatch frames (4x)
   for attaching when generating dragon's action poses next.
-- 📋 Hippocampus — **planned, not drawn yet**; full plan in "Hippocampus
-  hatch sequence (planned)" below. Departs from the other two in that it
-  isn't an egg at all: a clam/oyster on the seabed that opens to reveal
-  the baby. Everything else about the sequence — beat timing, shake
-  classes, frame keys, crack sound — is unchanged; the only code delta
-  was making the opening caption overridable, which is already in.
+- 🟨 Hippocampus — **frame 1 of 4 drawn**, plan for the rest in
+  "Hippocampus hatch sequence (planned)" below. Departs from the other
+  two in that it isn't an egg at all: a mussel shell on the seabed that
+  opens to reveal the baby. Everything else about the sequence — beat
+  timing, shake classes, frame keys, crack sound — is unchanged; the only
+  code delta was making the opening caption overridable, which is
+  already in.
+
+  `hippocampus-egg.png` (closed shell on sand) is the first frame.
+  Registration used the curled-`sleep`-pose approach rather than the egg
+  species' height fill, since a closed shell is wide and low: scaled by
+  width with the shell at 103px and the ground line on row 116, content
+  occupying rows 60–116. The composite lands at 81.2% width fill —
+  the same number `trex-sleep.png` independently landed on.
+
+  Took two generations, and the difference is worth recording because it
+  is a *prompt* fix, not a cleanup fix. The first came back with a sand
+  mound 1.177× the shell's width, which at the fixed 103px shell anchor
+  pushed the composite to 121px — 94.5% canvas fill, 3px margins, well
+  outside the 75–85% rule. Asking for "a small mound, roughly 10% wider
+  than the shell, not a broad beach" brought the ratio to 1.005. Nothing
+  in cleanup can fix that: the shell width is the anchor that has to hold
+  across all four frames, so an oversized sand mound has nowhere to go.
+  The re-roll also fixed the highlight for free — the first generation's
+  specular came through as six scattered pixels in a broken diagonal (the
+  fragmented-highlight shape dragon hit), where the re-roll's is a single
+  connected 11px cluster needing no hand repair.
+
+  `reference/hippocampus-egg-reference-4x.png` holds frame 1 at 4× for
+  attaching when generating frames 2–4. Unlike dragon's hatch reference
+  it sits on flat `#FF00FF` rather than a dark backdrop, so it doubles as
+  a demonstration of the background the next generation must produce.
 - ⬜ Unicorn, pegasus, wolf — no hatch art yet; picking these species
   still skips straight to instant pet creation. Remaining work is
   art-only (four frames each), no further code changes needed beyond
