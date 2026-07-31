@@ -26,8 +26,12 @@ export async function onRequestGet({ request, env, params }) {
 
 // Lets a kid change their own pet's color variant after creation — the
 // swatch row in index.html was only ever writing this to local state, so
-// the next pollPet() (every ~5s once synced) stomped it right back with
-// the stale server value. Mirrors action.js's own-pet auth check.
+// the next poll (every ~5s once synced) stomped it right back with the
+// stale server value. Mirrors action.js's own-pet auth check.
+//
+// Also where the roster strip switches which pet is out of the burrow:
+// `{ active: true }` makes this the kid's one active pet (SPEC.md §5
+// "Multiple pets"). Both fields are optional; send either or both.
 export async function onRequestPatch({ request, env, params }) {
   const device = await authenticate(request, env);
   if (!device) return unauthorized();
@@ -43,8 +47,12 @@ export async function onRequestPatch({ request, env, params }) {
   }
 
   const colorVariant = body && body.colorVariant;
-  if (typeof colorVariant !== 'string') {
-    return Response.json({ error: 'colorVariant is required' }, { status: 400 });
+  const makeActive = !!(body && body.active);
+  if (colorVariant !== undefined && typeof colorVariant !== 'string') {
+    return Response.json({ error: 'colorVariant must be a string' }, { status: 400 });
+  }
+  if (colorVariant === undefined && !makeActive) {
+    return Response.json({ error: 'nothing to update' }, { status: 400 });
   }
 
   const pet = await env.DB.prepare(
@@ -60,9 +68,22 @@ export async function onRequestPatch({ request, env, params }) {
     return Response.json({ error: 'that action is only available on your own pet' }, { status: 403 });
   }
 
+  // Settle the stretch that just ended before touching `active` — decay is
+  // charged at the rate the pet was actually living at, so the burrowed
+  // hours stay cheap and only the time after the switch bills at full rate.
   const decayed = applyDecay(pet, Date.now());
-  decayed.color_variant = colorVariant;
+  if (colorVariant !== undefined) decayed.color_variant = colorVariant;
   await persistPet(env.DB, decayed);
+
+  if (makeActive && !decayed.active) {
+    // Batched so the kid never briefly has two active pets (or none) —
+    // exactly one row per kid carries active = 1.
+    await env.DB.batch([
+      env.DB.prepare('UPDATE pets SET active = 0 WHERE kid_id = ?').bind(pet.kid_id),
+      env.DB.prepare('UPDATE pets SET active = 1 WHERE id = ?').bind(pet.id)
+    ]);
+    decayed.active = 1;
+  }
 
   return Response.json({ pet: serializePet(decayed) });
 }

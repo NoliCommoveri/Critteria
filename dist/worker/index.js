@@ -74,6 +74,7 @@ __name(onRequestPost, "onRequestPost");
 // _lib/decay.js
 var DECAY_PER_HOUR = { hunger: 10, happiness: 7, cleanliness: 5, energy: 4 };
 var SLEEP_ENERGY_REGEN_PER_HOUR = 120;
+var BURROW_DECAY_MULTIPLIER = 0.1;
 function clamp(v) {
   return Math.max(0, Math.min(100, v));
 }
@@ -82,15 +83,16 @@ function applyDecay(pet, now) {
   now = now || Date.now();
   const hours = (now - pet.last_updated) / 36e5;
   if (hours <= 0) return pet;
+  const rate = pet.active === 0 ? BURROW_DECAY_MULTIPLIER : 1;
   if (pet.sleeping) {
     pet.energy = clamp(pet.energy + hours * SLEEP_ENERGY_REGEN_PER_HOUR);
-    pet.hunger = clamp(pet.hunger - hours * DECAY_PER_HOUR.hunger * 0.5);
-    pet.cleanliness = clamp(pet.cleanliness - hours * DECAY_PER_HOUR.cleanliness * 0.3);
+    pet.hunger = clamp(pet.hunger - hours * DECAY_PER_HOUR.hunger * 0.5 * rate);
+    pet.cleanliness = clamp(pet.cleanliness - hours * DECAY_PER_HOUR.cleanliness * 0.3 * rate);
   } else {
-    pet.hunger = clamp(pet.hunger - hours * DECAY_PER_HOUR.hunger);
-    pet.happiness = clamp(pet.happiness - hours * DECAY_PER_HOUR.happiness);
-    pet.cleanliness = clamp(pet.cleanliness - hours * DECAY_PER_HOUR.cleanliness);
-    pet.energy = clamp(pet.energy - hours * DECAY_PER_HOUR.energy);
+    pet.hunger = clamp(pet.hunger - hours * DECAY_PER_HOUR.hunger * rate);
+    pet.happiness = clamp(pet.happiness - hours * DECAY_PER_HOUR.happiness * rate);
+    pet.cleanliness = clamp(pet.cleanliness - hours * DECAY_PER_HOUR.cleanliness * rate);
+    pet.energy = clamp(pet.energy - hours * DECAY_PER_HOUR.energy * rate);
   }
   pet.last_updated = now;
   return pet;
@@ -110,6 +112,10 @@ function serializePet(pet) {
     colorVariant: pet.color_variant,
     name: pet.name,
     stage: pet.stage,
+    // Hatch order — the roster strip sorts on this so the switcher buttons
+    // keep a stable position instead of shuffling between polls.
+    createdAt: pet.created_at,
+    active: pet.active === 0 ? false : true,
     hunger: pet.hunger,
     happiness: pet.happiness,
     energy: pet.energy,
@@ -119,6 +125,60 @@ function serializePet(pet) {
   };
 }
 __name(serializePet, "serializePet");
+
+// _lib/care.js
+var GOOD_CARE_AVG = 80;
+var UNLOCK_AT_DAYS = [7, 21];
+var MAX_PETS_PER_KID = UNLOCK_AT_DAYS.length + 1;
+function utcDay(now) {
+  return new Date(now || Date.now()).toISOString().slice(0, 10);
+}
+__name(utcDay, "utcDay");
+function careAverage(pet) {
+  return (pet.hunger + pet.happiness + pet.energy + pet.cleanliness) / 4;
+}
+__name(careAverage, "careAverage");
+function slotsFor(careDays) {
+  let slots = 1;
+  for (const threshold of UNLOCK_AT_DAYS) {
+    if (careDays >= threshold) slots += 1;
+  }
+  return Math.min(slots, MAX_PETS_PER_KID);
+}
+__name(slotsFor, "slotsFor");
+function nextUnlockAt(careDays) {
+  for (const threshold of UNLOCK_AT_DAYS) {
+    if (careDays < threshold) return threshold;
+  }
+  return null;
+}
+__name(nextUnlockAt, "nextUnlockAt");
+async function recordCareDay(db, kidId, pet, now) {
+  if (careAverage(pet) < GOOD_CARE_AVG) return false;
+  await db.prepare(
+    "INSERT OR IGNORE INTO care_days (kid_id, utc_day, pet_id, earned_at) VALUES (?, ?, ?, ?)"
+  ).bind(kidId, utcDay(now), pet.id, now).run();
+  return true;
+}
+__name(recordCareDay, "recordCareDay");
+async function careSummary(db, kidId, now) {
+  const [total, today] = await db.batch([
+    db.prepare("SELECT COUNT(*) AS n FROM care_days WHERE kid_id = ?").bind(kidId),
+    db.prepare("SELECT 1 AS ok FROM care_days WHERE kid_id = ? AND utc_day = ?").bind(kidId, utcDay(now))
+  ]);
+  const careDays = total.results[0] && total.results[0].n || 0;
+  const next = nextUnlockAt(careDays);
+  return {
+    careDays,
+    earnedToday: !!(today.results && today.results.length),
+    slots: slotsFor(careDays),
+    maxSlots: MAX_PETS_PER_KID,
+    nextUnlockAt: next,
+    daysToNextUnlock: next === null ? null : next - careDays,
+    goodCareAvg: GOOD_CARE_AVG
+  };
+}
+__name(careSummary, "careSummary");
 
 // api/pets/[id]/action.js
 function clamp2(v) {
@@ -173,24 +233,30 @@ async function onRequestPost2({ request, env, params }) {
     if (!HELPER_ACTIONS.includes(action)) {
       return Response.json({ error: "that action is only available on your own pet" }, { status: 403 });
     }
-    const utcDay = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+    const utcDay2 = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
     try {
       await env.DB.prepare(
         "INSERT INTO helper_action_usage (visitor_kid_id, host_pet_id, action, utc_day, used_at) VALUES (?, ?, ?, ?, ?)"
-      ).bind(device.kidId, pet.id, action, utcDay, Date.now()).run();
+      ).bind(device.kidId, pet.id, action, utcDay2, Date.now()).run();
     } catch (e) {
       return Response.json({ error: "already helped with this pet today" }, { status: 429 });
     }
   } else if (action === "sleep" && pet.sleeping || action === "wake" && !pet.sleeping) {
     return Response.json({ error: "pet is already in that state" }, { status: 409 });
   }
-  const decayed = applyDecay(pet, Date.now());
+  const now = Date.now();
+  const decayed = applyDecay(pet, now);
   applyEffect(decayed, action);
   await persistPet(env.DB, decayed);
   await env.DB.prepare(
     "INSERT INTO pet_events (pet_id, actor_kid_id, action, occurred_at) VALUES (?, ?, ?, ?)"
-  ).bind(pet.id, device.kidId, action, Date.now()).run();
-  return Response.json({ pet: serializePet(decayed) });
+  ).bind(pet.id, device.kidId, action, now).run();
+  let care = null;
+  if (isOwnPet) {
+    await recordCareDay(env.DB, device.kidId, decayed, now);
+    care = await careSummary(env.DB, device.kidId, now);
+  }
+  return Response.json({ pet: serializePet(decayed), care });
 }
 __name(onRequestPost2, "onRequestPost");
 
@@ -336,8 +402,12 @@ async function onRequestPatch2({ request, env, params }) {
     return Response.json({ error: "invalid JSON body" }, { status: 400 });
   }
   const colorVariant = body && body.colorVariant;
-  if (typeof colorVariant !== "string") {
-    return Response.json({ error: "colorVariant is required" }, { status: 400 });
+  const makeActive = !!(body && body.active);
+  if (colorVariant !== void 0 && typeof colorVariant !== "string") {
+    return Response.json({ error: "colorVariant must be a string" }, { status: 400 });
+  }
+  if (colorVariant === void 0 && !makeActive) {
+    return Response.json({ error: "nothing to update" }, { status: 400 });
   }
   const pet = await env.DB.prepare(
     `SELECT pets.*, kids.family_id AS owner_family_id
@@ -351,8 +421,15 @@ async function onRequestPatch2({ request, env, params }) {
     return Response.json({ error: "that action is only available on your own pet" }, { status: 403 });
   }
   const decayed = applyDecay(pet, Date.now());
-  decayed.color_variant = colorVariant;
+  if (colorVariant !== void 0) decayed.color_variant = colorVariant;
   await persistPet(env.DB, decayed);
+  if (makeActive && !decayed.active) {
+    await env.DB.batch([
+      env.DB.prepare("UPDATE pets SET active = 0 WHERE kid_id = ?").bind(pet.kid_id),
+      env.DB.prepare("UPDATE pets SET active = 1 WHERE id = ?").bind(pet.id)
+    ]);
+    decayed.active = 1;
+  }
   return Response.json({ pet: serializePet(decayed) });
 }
 __name(onRequestPatch2, "onRequestPatch");
@@ -466,7 +543,7 @@ async function onRequestPost6({ request, env }) {
   const codeHash = await sha256Hex(String(code).toUpperCase());
   const now = Date.now();
   const row = await env.DB.prepare(
-    "SELECT family_id, expires_at, used_at FROM pairing_codes WHERE code_hash = ?"
+    "SELECT family_id, kid_id, expires_at, used_at FROM pairing_codes WHERE code_hash = ?"
   ).bind(codeHash).first();
   if (!row || row.used_at !== null || row.expires_at < now) {
     return Response.json({ error: "invalid or expired code" }, { status: 400 });
@@ -481,9 +558,12 @@ async function onRequestPost6({ request, env }) {
   const tokenHash = await sha256Hex(token);
   await env.DB.prepare(
     `INSERT INTO devices (id, family_id, kid_id, token_hash, label, created_at, last_seen, revoked)
-     VALUES (?, ?, NULL, ?, ?, ?, ?, 0)`
-  ).bind(deviceId, row.family_id, tokenHash, label || null, now, now).run();
-  return Response.json({ token, deviceId, familyId: row.family_id }, { status: 201 });
+     VALUES (?, ?, ?, ?, ?, ?, ?, 0)`
+  ).bind(deviceId, row.family_id, row.kid_id || null, tokenHash, label || null, now, now).run();
+  return Response.json(
+    { token, deviceId, familyId: row.family_id, kidId: row.kid_id || null },
+    { status: 201 }
+  );
 }
 __name(onRequestPost6, "onRequestPost");
 
@@ -492,6 +572,19 @@ var TTL_MS = 5 * 60 * 1e3;
 async function onRequestPost7({ request, env }) {
   const device = await authenticate(request, env);
   if (!device) return unauthorized();
+  let body = null;
+  try {
+    body = await request.json();
+  } catch (e) {
+  }
+  const bindKid = !!(body && body.bindKid);
+  if (bindKid && !device.kidId) {
+    return Response.json(
+      { error: "this device has not claimed a kid yet, so it cannot share one" },
+      { status: 403 }
+    );
+  }
+  const kidId = bindKid ? device.kidId : null;
   const now = Date.now();
   const expiresAt = now + TTL_MS;
   let lastError;
@@ -500,9 +593,9 @@ async function onRequestPost7({ request, env }) {
     const codeHash = await sha256Hex(code);
     try {
       await env.DB.prepare(
-        "INSERT INTO pairing_codes (code_hash, family_id, expires_at, used_at) VALUES (?, ?, ?, NULL)"
-      ).bind(codeHash, device.familyId, expiresAt).run();
-      return Response.json({ code, expiresAt });
+        "INSERT INTO pairing_codes (code_hash, family_id, kid_id, expires_at, used_at) VALUES (?, ?, ?, ?, NULL)"
+      ).bind(codeHash, device.familyId, kidId, expiresAt).run();
+      return Response.json({ code, expiresAt, kidId });
     } catch (e) {
       lastError = e;
     }
@@ -525,7 +618,8 @@ async function onRequestGet5({ request, env }) {
     await persistPet(env.DB, decayed);
     pets.push(serializePet(decayed));
   }
-  return Response.json({ pets });
+  const care = device.kidId ? await careSummary(env.DB, device.kidId, now) : null;
+  return Response.json({ pets, care });
 }
 __name(onRequestGet5, "onRequestGet");
 async function onRequestPost8({ request, env }) {
@@ -544,25 +638,33 @@ async function onRequestPost8({ request, env }) {
   if (!species || typeof species !== "string") {
     return Response.json({ error: "species is required" }, { status: 400 });
   }
-  const existing = await env.DB.prepare("SELECT id FROM pets WHERE kid_id = ?").bind(device.kidId).first();
-  if (existing) {
-    return Response.json({ error: "this kid already has a pet" }, { status: 409 });
+  const now = Date.now();
+  const care = await careSummary(env.DB, device.kidId, now);
+  const owned = await env.DB.prepare("SELECT COUNT(*) AS n FROM pets WHERE kid_id = ?").bind(device.kidId).first();
+  if (owned.n >= care.slots) {
+    const next = nextUnlockAt(care.careDays);
+    return Response.json({
+      error: next === null ? "that's the most pets one kid can look after" : `${next - care.careDays} more good-care days until the next egg`,
+      care
+    }, { status: 403 });
   }
   const id = crypto.randomUUID();
-  const now = Date.now();
   const colorVariant = typeof body.colorVariant === "string" ? body.colorVariant : null;
   const name = typeof body.name === "string" ? body.name : null;
-  await env.DB.prepare(
-    `INSERT INTO pets (id, kid_id, species, color_variant, name, stage, created_at,
-       hunger, happiness, energy, cleanliness, sleeping, last_updated)
-     VALUES (?, ?, ?, ?, ?, 'young', ?, 80, 80, 80, 80, 0, ?)`
-  ).bind(id, device.kidId, species, colorVariant, name, now, now).run();
+  await env.DB.batch([
+    env.DB.prepare("UPDATE pets SET active = 0 WHERE kid_id = ?").bind(device.kidId),
+    env.DB.prepare(
+      `INSERT INTO pets (id, kid_id, species, color_variant, name, stage, created_at,
+         hunger, happiness, energy, cleanliness, sleeping, active, last_updated)
+       VALUES (?, ?, ?, ?, ?, 'young', ?, 80, 80, 80, 80, 0, 1, ?)`
+    ).bind(id, device.kidId, species, colorVariant, name, now, now)
+  ]);
   const pet = await env.DB.prepare("SELECT * FROM pets WHERE id = ?").bind(id).first();
-  return Response.json({ pet: serializePet(pet) }, { status: 201 });
+  return Response.json({ pet: serializePet(pet), care }, { status: 201 });
 }
 __name(onRequestPost8, "onRequestPost");
 
-// ../.wrangler/tmp/pages-5yZHT1/functionsRoutes-0.8806679442421617.mjs
+// ../.wrangler/tmp/pages-6XnO9Y/functionsRoutes-0.4712426197433264.mjs
 var routes = [
   {
     routePath: "/api/kids/:id/claim",
@@ -678,7 +780,7 @@ var routes = [
   }
 ];
 
-// ../../../../root/.npm/_npx/32026684e21afda6/node_modules/path-to-regexp/dist.es2015/index.js
+// ../../../../root/.npm/_npx/c943b712072b77c4/node_modules/path-to-regexp/dist.es2015/index.js
 function lexer(str) {
   var tokens = [];
   var i = 0;
@@ -1004,7 +1106,7 @@ function pathToRegexp(path, keys, options) {
 }
 __name(pathToRegexp, "pathToRegexp");
 
-// ../../../../root/.npm/_npx/32026684e21afda6/node_modules/wrangler/templates/pages-template-worker.ts
+// ../../../../root/.npm/_npx/c943b712072b77c4/node_modules/wrangler/templates/pages-template-worker.ts
 var escapeRegex = /[.+?^${}()|[\]\\]/g;
 function* executeRequest(request) {
   const requestPath = new URL(request.url).pathname;

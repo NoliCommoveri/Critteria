@@ -19,7 +19,7 @@ export async function onRequestPost({ request, env }) {
   const codeHash = await sha256Hex(String(code).toUpperCase());
   const now = Date.now();
   const row = await env.DB.prepare(
-    'SELECT family_id, expires_at, used_at FROM pairing_codes WHERE code_hash = ?'
+    'SELECT family_id, kid_id, expires_at, used_at FROM pairing_codes WHERE code_hash = ?'
   ).bind(codeHash).first();
 
   if (!row || row.used_at !== null || row.expires_at < now) {
@@ -40,10 +40,16 @@ export async function onRequestPost({ request, env }) {
   const token = newDeviceToken();
   const tokenHash = await sha256Hex(token);
 
+  // A kid-bound code (pairing-code.js `bindKid`) lands the new device on
+  // that kid immediately; a plain one leaves kid_id NULL so the device
+  // shows the kid picker on first boot, exactly as before.
   await env.DB.prepare(
     `INSERT INTO devices (id, family_id, kid_id, token_hash, label, created_at, last_seen, revoked)
-     VALUES (?, ?, NULL, ?, ?, ?, ?, 0)`
-  ).bind(deviceId, row.family_id, tokenHash, label || null, now, now).run();
+     VALUES (?, ?, ?, ?, ?, ?, ?, 0)`
+  ).bind(deviceId, row.family_id, row.kid_id || null, tokenHash, label || null, now, now).run();
 
-  return Response.json({ token, deviceId, familyId: row.family_id }, { status: 201 });
+  return Response.json(
+    { token, deviceId, familyId: row.family_id, kidId: row.kid_id || null },
+    { status: 201 }
+  );
 }

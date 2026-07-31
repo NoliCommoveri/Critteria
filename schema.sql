@@ -1,5 +1,5 @@
 -- Critteria backend schema (see SPEC.md §3, §9).
--- Apply with: npx wrangler d1 execute critteria --remote --file=./schema.sql
+-- Apply with: npx wrangler d1 execute critteriamulti --remote --file=./schema.sql
 
 PRAGMA foreign_keys = ON;
 
@@ -38,13 +38,21 @@ CREATE INDEX idx_devices_token ON devices(token_hash);
 CREATE TABLE pairing_codes (
   code_hash   TEXT PRIMARY KEY,       -- SHA-256 of 6-char code
   family_id   TEXT NOT NULL REFERENCES families(id),
+  -- NULL = the redeeming device joins the family and picks a kid itself.
+  -- Set = the code also carries a kid, so a second tablet for the SAME
+  -- kid lands straight on their pets with no picker (SPEC.md §7).
+  kid_id      TEXT REFERENCES kids(id),
   expires_at  INTEGER NOT NULL,       -- 5-min TTL
   used_at     INTEGER                 -- non-null once redeemed; single use
 );
 
+-- A kid may own several pets, but only as many as they've earned through
+-- good-care days (see care_days below). kid_id is deliberately NOT UNIQUE:
+-- the cap is enforced in POST /api/pets against the earned slot count, not
+-- by the schema.
 CREATE TABLE pets (
   id            TEXT PRIMARY KEY,
-  kid_id        TEXT NOT NULL UNIQUE REFERENCES kids(id),  -- one pet per kid
+  kid_id        TEXT NOT NULL REFERENCES kids(id),
   species       TEXT NOT NULL,
   color_variant TEXT,
   name          TEXT,
@@ -55,9 +63,30 @@ CREATE TABLE pets (
   energy        REAL NOT NULL DEFAULT 80,
   cleanliness   REAL NOT NULL DEFAULT 80,
   sleeping      INTEGER NOT NULL DEFAULT 0,
+  -- Exactly one pet per kid is active (the one on screen); the rest are
+  -- "in the burrow" and decay at BURROW_DECAY_MULTIPLIER of the normal
+  -- rate, so a second pet adds care load without doubling it. Maintained
+  -- as a batch by POST /api/pets and PATCH /api/pets/:id — nothing else
+  -- writes this column.
+  active        INTEGER NOT NULL DEFAULT 1,
   last_updated  INTEGER NOT NULL      -- server epoch ms; decay applied lazily
 );
 CREATE INDEX idx_pets_kid ON pets(kid_id);
+
+-- One row per kid per UTC day on which they left one of their own pets
+-- above the good-care average. Cumulative — nothing ever deletes from
+-- here, so a missed day stalls progress without resetting it. The PK is
+-- also the count index (COUNT(*) WHERE kid_id = ? uses its left prefix).
+--
+-- Unlike helper_action_usage, INSERT OR IGNORE is the correct verb here:
+-- a duplicate means "today already counted", not a rate limit to surface.
+CREATE TABLE care_days (
+  kid_id     TEXT NOT NULL REFERENCES kids(id),
+  utc_day    TEXT NOT NULL,           -- 'YYYY-MM-DD' (UTC)
+  pet_id     TEXT NOT NULL REFERENCES pets(id),  -- which pet earned it
+  earned_at  INTEGER NOT NULL,
+  PRIMARY KEY (kid_id, utc_day)
+);
 
 CREATE TABLE pet_events (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,

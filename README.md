@@ -13,6 +13,8 @@ index.html    Single-file PWA. Loads pixel-art sprites from assets/, syncs
 assets/       Species sprites, palettes, and generation reference art.
 SPEC.md       Full design spec — read this before making changes.
 schema.sql    D1 schema — full CREATE TABLE inline in SPEC.md §9 Step 5.
+reset.sql     Drops every table so schema.sql can be re-applied. Only
+              safe while there's no real data; see SPEC.md §9 Step 5a.
 functions/    Cloudflare Worker endpoints (Pages-Functions file-based
               routing), bundled by `wrangler pages functions build` into
               dist/worker/index.js. Endpoint list in SPEC.md §9.
@@ -52,6 +54,19 @@ live in this repo's `main` history.
 - **Frontend**: six species with idle/happy/sad/sleep poses drawn to the
   style rules in `SPEC.md §4`. Action poses (eat/play/bath) still fall
   back to the required tier per the fallback chain.
+- **Multiple pets**: a kid earns a second pet after 7 good-care days and
+  a third after 21, capped at three. A good-care day is banked by
+  looking after your *own* pet well enough to leave its stats averaging
+  80+ — once per day, and helping a sibling never counts. Since only
+  sleep raises energy, a full round of care (and, on a pet that's been
+  up all day, a nap) is what banks a day; mashing feed/play/clean at an
+  exhausted pet doesn't. The pet you're
+  not currently watching sits in the "burrow" and decays at a tenth of
+  the normal rate, so extra pets add care load without multiplying it.
+  The roster strip above the pet shows what you have and how many days
+  are left on the next egg. Works offline too. See `SPEC.md §5`
+  "Multiple pets". `schema.sql` already has the shape this needs; a
+  database created before it needs the reset in `SPEC.md §9` Step 5a.
 - **Hatching sequence**: T-Rex and Dragon have the full one-time animated
   hatch/birth sequence (egg → crack → crack → newborn) played right after
   species selection; see `SPEC.md §5` "Hatching / birth sequence" for the

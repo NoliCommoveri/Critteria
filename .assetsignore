@@ -3,6 +3,7 @@
 functions/
 dist/
 schema.sql
+reset.sql
 wrangler.toml
 .assetsignore
 README.md

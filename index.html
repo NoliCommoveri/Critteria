@@ -103,6 +103,65 @@
     margin-bottom: 1rem;
   }
 
+  /* Roster strip: one tile per pet the kid is raising, plus a trailing
+     slot tile that's either a ready egg or the locked progress toward the
+     next unlock (SPEC.md §5 "Multiple pets"). Scrolls sideways rather than
+     wrapping, so three tiles plus the slot never push the stage down. */
+  .pet-switcher {
+    display: flex;
+    justify-content: center;
+    gap: 0.4rem;
+    margin: 0 0 0.6rem;
+    overflow-x: auto;
+    padding-bottom: 0.2rem;
+  }
+  .pet-tile {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15rem;
+    width: 62px;
+    padding: 0.3rem 0.15rem;
+    border-radius: 12px;
+    border: 2px solid var(--bar-track);
+    background: var(--card);
+    color: var(--muted);
+    font-size: 0.62rem;
+    font-weight: 600;
+    line-height: 1.1;
+    cursor: pointer;
+  }
+  .pet-tile.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: #fbf0e8;
+  }
+  .pet-tile.locked {
+    cursor: default;
+    opacity: 0.75;
+    border-style: dashed;
+  }
+  .pet-tile img {
+    width: 30px;
+    height: 30px;
+    object-fit: contain;
+  }
+  .pet-tile img.pixel-art { image-rendering: pixelated; }
+  .pet-tile .tile-glyph {
+    font-size: 1.35rem;
+    line-height: 30px;
+  }
+  .pet-tile .tile-label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* A burrowed pet whose stats have slipped gets a nudge, so "out of sight"
+     never quietly becomes "forgotten". */
+  .pet-tile .tile-alert { color: #d9534f; }
+
   .variant-row {
     display: none;
     justify-content: center;
@@ -370,12 +429,47 @@
   }
 
   /* --- Family sync screens (family-setup, kid-picker, sibling-visit) --- */
-  .setup-choice-row {
-    display: flex;
-    justify-content: center;
-    gap: 0.5rem;
+
+  /* Both ways in are shown at once rather than behind a "which are you?"
+     choice — the setup code box has to be on screen the moment the screen
+     is, or there's no way to start a family without a shell. Mirrors the
+     two-panel setup in Star-homeschool's parent.html. */
+  .setup-panel {
+    text-align: left;
+    border: 2px solid var(--bar-track);
+    border-radius: 14px;
+    padding: 0.8rem 0.9rem 0.2rem;
+    margin-bottom: 0.9rem;
+  }
+  .setup-panel-title {
+    font-size: 1rem;
+    margin: 0 0 0.3rem;
+  }
+  .setup-panel .picker-hint {
+    margin-bottom: 0.7rem;
+  }
+  .setup-label {
+    display: block;
+    text-align: left;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--muted);
     margin-bottom: 1rem;
   }
+  .setup-label input {
+    display: block;
+    width: 100%;
+    margin-top: 0.3rem;
+    padding: 0.6rem 0.8rem;
+    border: 2px solid var(--bar-track);
+    border-radius: 10px;
+    font: inherit;
+    font-weight: 400;
+    background: var(--card);
+    color: inherit;
+  }
+  .setup-msg:empty { display: none; }
+  .setup-msg { margin: 0 0 0.6rem; }
   .inline-form {
     display: flex;
     gap: 0.5rem;
@@ -572,8 +666,8 @@
 <body>
   <div class="app">
     <div class="species-picker" id="species-picker">
-      <h1 class="picker-title">Choose your pet!</h1>
-      <p class="picker-hint">Pick carefully — this is who you'll be raising.</p>
+      <h1 class="picker-title" id="picker-title">Choose your pet!</h1>
+      <p class="picker-hint" id="picker-hint">Pick carefully — this is who you'll be raising.</p>
       <div class="species-row" id="species-row">
         <button class="species-btn" data-species="trex"><span class="emoji">🦖</span> T-Rex</button>
         <button class="species-btn" data-species="unicorn"><span class="emoji">🦄</span> Unicorn</button>
@@ -582,6 +676,7 @@
         <button class="species-btn" data-species="pegasus"><span class="emoji">🪽</span> Pegasus</button>
         <button class="species-btn" data-species="wolf"><span class="emoji">🐺</span> Wolf</button>
       </div>
+      <button type="button" class="visit-toggle" id="picker-cancel" style="display: none;">Never mind, go back</button>
     </div>
 
     <div class="species-picker" id="hatch-sequence">
@@ -600,20 +695,31 @@
 
     <div class="species-picker" id="family-setup">
       <h1 class="picker-title">Set up this tablet</h1>
-      <p class="picker-hint">Is this the very first tablet, or do you have a pairing code from another one?</p>
-      <div class="setup-choice-row">
-        <button type="button" class="species-btn" id="setup-choice-first"><span class="emoji">🏠</span> First tablet</button>
-        <button type="button" class="species-btn" id="setup-choice-pair"><span class="emoji">🔗</span> I have a code</button>
+
+      <label class="setup-label">This tablet's name (optional)
+        <input type="text" id="setup-device-label" maxlength="60" placeholder="e.g. Ana's tablet" autocomplete="off">
+      </label>
+
+      <div class="setup-panel">
+        <h2 class="setup-panel-title"><span class="emoji">🏠</span> Start the family</h2>
+        <p class="picker-hint">First tablet? Enter the family setup code from the Cloudflare settings.</p>
+        <form class="inline-form" id="setup-secret-form">
+          <input type="password" id="setup-secret-input" placeholder="Family setup code" autocomplete="off">
+          <button type="submit">Create family</button>
+        </form>
+        <p class="status setup-msg" id="setup-secret-status"></p>
       </div>
-      <form class="inline-form" id="setup-secret-form" style="display: none;">
-        <input type="password" id="setup-secret-input" placeholder="Family setup code" autocomplete="off">
-        <button type="submit">Continue</button>
-      </form>
-      <form class="inline-form" id="setup-pair-form" style="display: none;">
-        <input type="text" id="setup-pair-input" maxlength="6" placeholder="6-character code" autocomplete="off" style="text-transform: uppercase;">
-        <button type="submit">Continue</button>
-      </form>
-      <p class="status" id="setup-status"></p>
+
+      <div class="setup-panel">
+        <h2 class="setup-panel-title"><span class="emoji">🔗</span> Join the family</h2>
+        <p class="picker-hint">Already set up on another tablet? Tap 📲 there and type its code here.</p>
+        <form class="inline-form" id="setup-pair-form">
+          <input type="text" id="setup-pair-input" maxlength="6" placeholder="6-character code" autocomplete="off" style="text-transform: uppercase;">
+          <button type="submit">Join family</button>
+        </form>
+        <p class="status setup-msg" id="setup-pair-status"></p>
+      </div>
+
       <button type="button" class="back-link" id="setup-cancel">← Not now</button>
     </div>
 
@@ -648,10 +754,17 @@
 
     <div class="species-picker" id="add-device">
       <h1 class="picker-title">Add another tablet</h1>
-      <p class="picker-hint">Enter this code on the new tablet's "I have a code" screen.</p>
+      <p class="picker-hint">Who is the new tablet for? Type the code it gives you into that tablet's "Join the family" box.</p>
+      <div class="setup-choice-row">
+        <button type="button" class="species-btn" id="pairing-scope-kid"><span class="emoji">👤</span> My other tablet</button>
+        <button type="button" class="species-btn" id="pairing-scope-family"><span class="emoji">👨‍👩‍👧‍👦</span> Someone else's</button>
+      </div>
+      <p class="picker-hint" id="pairing-scope-note"></p>
       <div class="pairing-code-display" id="pairing-code-display">------</div>
       <p class="status" id="pairing-code-status"></p>
       <button type="button" class="species-btn" id="pairing-code-refresh">🔄 Get a new code</button>
+      <p class="picker-hint disconnect-hint">Setting the family up again from scratch? Disconnecting forgets this tablet's family login so you can enter the setup code again. The pet on this tablet stays put.</p>
+      <button type="button" class="back-link" id="disconnect-device">Disconnect this tablet</button>
       <button type="button" class="back-link" id="pairing-code-back">← Back to your pet</button>
     </div>
 
@@ -666,6 +779,8 @@
       <input type="text" id="rename-input" maxlength="16" placeholder="Pet's name">
       <button type="submit">Save</button>
     </form>
+
+    <div class="pet-switcher" id="pet-switcher"></div>
 
     <div class="stage" id="stage">
       <img id="pet-sprite" class="pet-visual" alt="">
@@ -731,13 +846,32 @@
   var DECAY_PER_HOUR = { hunger: 10, happiness: 7, cleanliness: 5, energy: 4 };
   var SLEEP_ENERGY_REGEN_PER_HOUR = 120;
 
+  // Mirrors functions/_lib/decay.js. A kid can raise more than one pet, but
+  // only the one on screen decays at full rate — the rest are "in the
+  // burrow" (SPEC.md §5 "Multiple pets"), so a second pet adds care load
+  // instead of doubling it. Tuned so a weekend away leaves a burrowed pet
+  // hungry but not sad, while most of a week forgotten does make it sad.
+  var BURROW_DECAY_MULTIPLIER = 0.1;
+
+  // Mirrors functions/_lib/care.js — the offline path has to agree with the
+  // server or a kid's progress would jump when the tablet connects.
+  // Sits between getMood()'s 'neutral' and its 90-average 'happy'. See the
+  // long note on GOOD_CARE_AVG in functions/_lib/care.js before changing
+  // it — at 70 the daily check is vacuous, at 90 it needs a nap nearly
+  // every day. Both files have to move together.
+  var GOOD_CARE_AVG = 80;
+  var UNLOCK_AT_DAYS = [7, 21];
+  var MAX_PETS_PER_KID = UNLOCK_AT_DAYS.length + 1;
+
   function clamp(v) { return Math.max(0, Math.min(100, v)); }
 
-  function defaultState() {
+  function defaultPet() {
     return {
+      // Server pet id once synced; null while this pet is local-only.
+      id: null,
       name: null,
-      // Chosen once at launch and then locked — see SPEC.md "Species
-      // selection" for the future points-gated switching plan.
+      // Chosen once per pet at hatch and then locked — see SPEC.md
+      // "Species selection" for the future points-gated switching plan.
       species: null,
       // 'base' = the art's original ship colors. See COLOR_VARIANTS below —
       // only species listed there offer anything else.
@@ -747,23 +881,115 @@
       energy: 80,
       cleanliness: 80,
       sleeping: false,
+      createdAt: Date.now(),
       lastUpdated: Date.now()
     };
   }
 
+  // The kid's whole roster, oldest first. `state` always points AT one of
+  // these objects rather than copying it, so every existing `state.hunger`
+  // write in this file mutates the roster entry directly and nothing else
+  // had to learn about multiple pets.
+  var roster = [defaultPet()];
+  var activeIndex = 0;
+  var state = roster[0];
+
+  // Offline good-care tracking. Once a device is synced the server's `care`
+  // block (below) is authoritative and this stops being read.
+  var localCare = { days: 0, lastDay: null };
+
   function loadState() {
+    var parsed = null;
     try {
-      var raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return defaultState();
-      var parsed = JSON.parse(raw);
-      return Object.assign(defaultState(), parsed);
+      parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
     } catch (e) {
-      return defaultState();
+      parsed = null;
     }
+
+    if (parsed && Array.isArray(parsed.pets) && parsed.pets.length) {
+      roster = parsed.pets.map(function (p) { return Object.assign(defaultPet(), p); });
+      activeIndex = Math.min(Math.max(parsed.activeIndex | 0, 0), roster.length - 1);
+      if (parsed.care) localCare = Object.assign({ days: 0, lastDay: null }, parsed.care);
+    } else if (parsed && parsed.species) {
+      // v1 payload: a single flat pet object. It becomes roster slot 0 with
+      // its stats untouched, so a kid who's been raising one pet for months
+      // sees exactly that pet on the first launch after this update.
+      roster = [Object.assign(defaultPet(), parsed)];
+      activeIndex = 0;
+    } else {
+      roster = [defaultPet()];
+      activeIndex = 0;
+    }
+
+    state = roster[activeIndex];
   }
 
   function saveState() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    // The active pet's fields are also written flat at the top level, which
+    // is exactly the v1 shape — so rolling this release back (SPEC.md §9
+    // "Rollback") leaves the old code reading the pet the kid was last
+    // looking at instead of dumping them on the species picker. loadState()
+    // checks `pets` first, so the duplication never wins on the way in.
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(Object.assign({}, state, {
+      v: 2,
+      pets: roster,
+      activeIndex: activeIndex,
+      care: localCare
+    })));
+  }
+
+  loadState();
+
+  // --- Good-care days -------------------------------------------------------
+  //
+  // Extra pets are earned, not given: a kid banks one good-care day per UTC
+  // day by leaving one of their own pets averaging GOOD_CARE_AVG or better,
+  // and each threshold in UNLOCK_AT_DAYS opens another slot. Cumulative, so
+  // a missed day stalls progress rather than wiping it (SPEC.md §5).
+
+  function utcDayString() { return new Date().toISOString().slice(0, 10); }
+
+  function careAverage(s) {
+    return (s.hunger + s.happiness + s.energy + s.cleanliness) / 4;
+  }
+
+  function slotsFor(days) {
+    var slots = 1;
+    UNLOCK_AT_DAYS.forEach(function (t) { if (days >= t) slots += 1; });
+    return Math.min(slots, MAX_PETS_PER_KID);
+  }
+
+  function nextUnlockAt(days) {
+    for (var i = 0; i < UNLOCK_AT_DAYS.length; i++) {
+      if (days < UNLOCK_AT_DAYS[i]) return UNLOCK_AT_DAYS[i];
+    }
+    return null;
+  }
+
+  // Set from the server's `care` block on every poll/action once synced;
+  // null means "not synced yet", and careView() falls back to localCare.
+  var serverCare = null;
+
+  function careView() {
+    if (serverCare) return serverCare;
+    var next = nextUnlockAt(localCare.days);
+    return {
+      careDays: localCare.days,
+      earnedToday: localCare.lastDay === utcDayString(),
+      slots: slotsFor(localCare.days),
+      maxSlots: MAX_PETS_PER_KID,
+      nextUnlockAt: next,
+      daysToNextUnlock: next === null ? null : next - localCare.days
+    };
+  }
+
+  // Offline counterpart to recordCareDay() in functions/_lib/care.js.
+  function recordLocalCareDay() {
+    var day = utcDayString();
+    if (localCare.lastDay === day) return;
+    if (careAverage(state) < GOOD_CARE_AVG) return;
+    localCare.lastDay = day;
+    localCare.days += 1;
   }
 
   // --- Backend sync (SPEC.md §9 Step 10) ----------------------------------
@@ -816,23 +1042,39 @@
     return data;
   }
 
-  function applyDecay(s) {
+  // `burrowed` slows every drain to BURROW_DECAY_MULTIPLIER for a pet the
+  // kid isn't currently raising. Defaults to false so the existing
+  // single-pet call sites keep charging the full rate.
+  function applyDecay(s, burrowed) {
     var now = Date.now();
     var hours = (now - s.lastUpdated) / 3600000;
     if (hours <= 0) return s;
 
+    var rate = burrowed ? BURROW_DECAY_MULTIPLIER : 1;
+
     if (s.sleeping) {
+      // Energy regen stays at full rate in the burrow too — it caps at 100
+      // anyway, and a napping pet should still wake up rested.
       s.energy = clamp(s.energy + hours * SLEEP_ENERGY_REGEN_PER_HOUR);
-      s.hunger = clamp(s.hunger - hours * DECAY_PER_HOUR.hunger * 0.5);
-      s.cleanliness = clamp(s.cleanliness - hours * DECAY_PER_HOUR.cleanliness * 0.3);
+      s.hunger = clamp(s.hunger - hours * DECAY_PER_HOUR.hunger * 0.5 * rate);
+      s.cleanliness = clamp(s.cleanliness - hours * DECAY_PER_HOUR.cleanliness * 0.3 * rate);
     } else {
-      s.hunger = clamp(s.hunger - hours * DECAY_PER_HOUR.hunger);
-      s.happiness = clamp(s.happiness - hours * DECAY_PER_HOUR.happiness);
-      s.cleanliness = clamp(s.cleanliness - hours * DECAY_PER_HOUR.cleanliness);
-      s.energy = clamp(s.energy - hours * DECAY_PER_HOUR.energy);
+      s.hunger = clamp(s.hunger - hours * DECAY_PER_HOUR.hunger * rate);
+      s.happiness = clamp(s.happiness - hours * DECAY_PER_HOUR.happiness * rate);
+      s.cleanliness = clamp(s.cleanliness - hours * DECAY_PER_HOUR.cleanliness * rate);
+      s.energy = clamp(s.energy - hours * DECAY_PER_HOUR.energy * rate);
     }
     s.lastUpdated = now;
     return s;
+  }
+
+  // Advances every hatched pet, charging the burrow rate to the ones that
+  // aren't on screen. Call this before anything that changes which pet is
+  // active, so each stretch is billed at the rate it was actually lived at.
+  function decayRoster() {
+    roster.forEach(function (p, i) {
+      if (p.species) applyDecay(p, i !== activeIndex);
+    });
   }
 
   function getMood(s) {
@@ -1329,8 +1571,10 @@
   var saveNote = document.getElementById('save-note');
   var btnVisit = document.getElementById('btn-visit');
   var addDeviceToggle = document.getElementById('add-device-toggle');
-
-  var state = loadState();
+  var petSwitcher = document.getElementById('pet-switcher');
+  var pickerTitle = document.getElementById('picker-title');
+  var pickerHint = document.getElementById('picker-hint');
+  var pickerCancel = document.getElementById('picker-cancel');
 
   // --- Screen management ---------------------------------------------------
   //
@@ -1428,6 +1672,130 @@
     petSprite.classList.toggle('pixel-art', petSprite.naturalWidth > 0 && petSprite.naturalWidth <= 128);
   });
 
+  // --- Roster strip ---------------------------------------------------------
+
+  // Switches which pet is on screen. Local-only devices just move the
+  // pointer; synced ones tell the server too, since `active` is what the
+  // server-side burrow rate keys off.
+  function switchToPet(index) {
+    if (index === activeIndex || index < 0 || index >= roster.length) return;
+    decayRoster();
+    activeIndex = index;
+    state = roster[activeIndex];
+    saveState();
+    // Nothing carries over between pets: an in-flight bath pose, its
+    // travelling item sprite and bubbles, or a half-open rename form all
+    // belong to the pet that was on screen a moment ago. Clearing the
+    // timer alone would strand the item sprite mid-flight, since it's the
+    // timer's callback that normally hides it again.
+    actionPose = null;
+    clearTimeout(actionPoseTimer);
+    itemSprite.classList.remove('show');
+    clearWashBubbles();
+    renameForm.classList.remove('visible');
+    render();
+    if (state.id && device.token) {
+      device.petId = state.id;
+      saveDevice();
+      syncActivePet(state.id);
+    }
+  }
+
+  // Starts the flow for hatching an earned extra pet: the species picker
+  // comes back, and finalizeNewPet() appends rather than overwrites because
+  // pendingNewPet is set (see the species button handler).
+  var pendingNewPet = false;
+
+  function beginHatchNewPet() {
+    pendingNewPet = true;
+    pickerTitle.textContent = 'A new egg!';
+    pickerHint.textContent = "You've earned it — what's hatching this time?";
+    pickerCancel.style.display = 'block';
+    setUiScreen('species-picker');
+  }
+
+  // Backing out of an earned hatch has to be possible — a kid who taps the
+  // egg to see what's on offer shouldn't be forced to spend the slot.
+  pickerCancel.addEventListener('click', function () {
+    pendingNewPet = false;
+    pickerCancel.style.display = 'none';
+    pickerTitle.textContent = 'Choose your pet!';
+    pickerHint.textContent = "Pick carefully — this is who you'll be raising.";
+    setUiScreen('app-body');
+    render();
+  });
+
+  function tileSprite(p) {
+    var art = resolvePose(p.species, MOOD_POSES[getMood(p)] || 'idle');
+    var img = document.createElement('img');
+    img.alt = '';
+    // Deliberately the base art, not resolveDisplaySrc() — the recolor is
+    // async and would repaint the whole strip on every poll to save a
+    // detail that's illegible at 30px anyway.
+    if (art.src) img.src = art.src;
+    img.addEventListener('load', function () {
+      img.classList.toggle('pixel-art', img.naturalWidth > 0 && img.naturalWidth <= 128);
+    });
+    return img;
+  }
+
+  function makeTile(className, child, label) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'pet-tile' + (className ? ' ' + className : '');
+    btn.appendChild(child);
+    var labelEl = document.createElement('span');
+    labelEl.className = 'tile-label';
+    labelEl.textContent = label;
+    btn.appendChild(labelEl);
+    return btn;
+  }
+
+  function glyph(text) {
+    var span = document.createElement('span');
+    span.className = 'tile-glyph';
+    span.textContent = text;
+    return span;
+  }
+
+  function renderPetSwitcher() {
+    var care = careView();
+    var hatched = roster.filter(function (p) { return p.species; });
+
+    // With one pet and nothing earned yet the strip is still worth showing:
+    // the locked tile is how a kid finds out a second pet exists at all.
+    petSwitcher.innerHTML = '';
+
+    roster.forEach(function (p, i) {
+      if (!p.species) return;
+      var tile = makeTile(i === activeIndex ? 'active' : '', tileSprite(p), p.name || 'Pet');
+      if (getMood(p) === 'sad') tile.querySelector('.tile-label').classList.add('tile-alert');
+      tile.title = (p.name || 'Pet') + ' the ' + p.species;
+      tile.addEventListener('click', function () { switchToPet(i); });
+      petSwitcher.appendChild(tile);
+    });
+
+    if (hatched.length >= care.maxSlots) return;
+
+    if (hatched.length < care.slots) {
+      var ready = makeTile('', glyph('🥚'), 'Hatch!');
+      ready.title = "You've earned another pet — pick a species";
+      ready.addEventListener('click', beginHatchNewPet);
+      petSwitcher.appendChild(ready);
+      return;
+    }
+
+    // Short enough to fit the tile without ellipsis at two digits — the
+    // full sentence lives in the tooltip below.
+    var remaining = care.daysToNextUnlock;
+    var locked = makeTile('locked', glyph('🔒'),
+      remaining === 1 ? '1 day' : remaining + ' days');
+    locked.title = 'Look after your pet well on ' + remaining +
+      ' more day' + (remaining === 1 ? '' : 's') + ' to earn another egg. ' +
+      (care.earnedToday ? "Today's already counted — nice work!" : 'Today doesn’t count yet.');
+    petSwitcher.appendChild(locked);
+  }
+
   function render() {
     // Screen visibility is owned by setUiScreen() now (see "Screen
     // management" above) — this just guards against rendering pet-screen
@@ -1460,6 +1828,7 @@
     });
 
     renderVariantPicker();
+    renderPetSwitcher();
 
     document.getElementById('bar-hunger').style.width = state.hunger + '%';
     document.getElementById('bar-happiness').style.width = state.happiness + '%';
@@ -1493,7 +1862,7 @@
   var localTickTimer = null;
 
   function tick() {
-    applyDecay(state);
+    decayRoster();
     saveState();
     render();
   }
@@ -1527,6 +1896,10 @@
       // back to 100.
       var itemSrc = ACTION_POSES[action] ? pickItem(state.species, action) : null;
       fn();
+      // Offline mirror of the server's care-day write in action.js: caring
+      // for a pet well enough banks today toward the next unlock, whether
+      // or not this tablet has ever seen the backend.
+      recordLocalCareDay();
       if (ACTION_POSES[action]) {
         showActionPose(ACTION_POSES[action], itemSrc);
         if (action === 'clean' && itemSrc === CLEAN_ITEM_SPONGE) spawnWashBubbles();
@@ -1553,6 +1926,10 @@
         method: 'POST',
         body: { action: serverAction }
       });
+      // The action response carries the caller's refreshed unlock progress,
+      // so the roster strip ticks over the moment a good-care day is banked
+      // rather than up to 5 s later on the next poll.
+      if (data.care) serverCare = data.care;
       applyServerPet(data.pet);
       render();
     } catch (err) {
@@ -1763,8 +2140,13 @@
   // than drifting all the way to the top of the stage.
   var WASH_BUBBLE_COUNT = 7;
 
+  // Tracked so switching pets mid-bath can cancel the ones still queued —
+  // otherwise a stagger delay lands after the swap and the new pet gets a
+  // puff of someone else's bathwater.
+  var washBubbleTimers = [];
+
   function spawnWashBubble(delayMs) {
-    setTimeout(function () {
+    washBubbleTimers.push(setTimeout(function () {
       var el = document.createElement('img');
       el.className = 'wash-bubble';
       el.src = BUBBLE_SPRITES[Math.floor(Math.random() * BUBBLE_SPRITES.length)];
@@ -1779,14 +2161,20 @@
       el.style.setProperty('--bubble-drift', (Math.random() * 14 - 7).toFixed(0) + 'px');
       el.addEventListener('animationend', function () { el.remove(); });
       washBubbles.appendChild(el);
-    }, delayMs);
+    }, delayMs));
   }
 
   function spawnWashBubbles() {
-    washBubbles.innerHTML = '';
+    clearWashBubbles();
     for (var i = 0; i < WASH_BUBBLE_COUNT; i++) {
       spawnWashBubble(Math.random() * 500);
     }
+  }
+
+  function clearWashBubbles() {
+    washBubbleTimers.forEach(clearTimeout);
+    washBubbleTimers = [];
+    washBubbles.innerHTML = '';
   }
 
   function clearHatchTimers() {
@@ -1875,12 +2263,29 @@
   // path (species with no hatch sequence) and the new hatch-sequence path
   // (once the kid has named their pet and tapped Continue).
   function finalizeNewPet(species, name) {
+    // An earned extra pet gets its own roster slot; otherwise this is the
+    // kid's first pet and fills the empty slot that's already there. Either
+    // way the new pet is the one on screen, and decayRoster() bills the
+    // others at the burrow rate from here on.
+    var slot = state;
+    if (pendingNewPet) {
+      decayRoster();
+      slot = defaultPet();
+      roster.push(slot);
+      activeIndex = roster.length - 1;
+      state = slot;
+    }
+    pendingNewPet = false;
+    pickerCancel.style.display = 'none';
+    pickerTitle.textContent = 'Choose your pet!';
+    pickerHint.textContent = "Pick carefully — this is who you'll be raising.";
+
     if (device.token && device.kidId) {
-      createServerPet(species, 'base', name);
+      createServerPet(species, 'base', name, slot);
       return;
     }
-    state.species = species;
-    if (name) state.name = name;
+    slot.species = species;
+    if (name) slot.name = name;
     saveState();
     setUiScreen('app-body');
     startLocalTick();
@@ -1890,9 +2295,10 @@
 
   speciesButtons.forEach(function (btn) {
     btn.addEventListener('click', function () {
-      // One-time pick: species is locked in once chosen. A future unlock
-      // mechanism (see SPEC.md) can lift this guard to allow re-picking.
-      if (state.species) return;
+      // Species is locked in once chosen — for THIS pet. Hatching another
+      // pet (pendingNewPet) is the earned way past it; a future unlock can
+      // still add re-picking within one pet's life (see SPEC.md).
+      if (state.species && !pendingNewPet) return;
       var species = btn.dataset.species;
       if (HATCH_SEQUENCES[species]) {
         setUiScreen('hatch-sequence');
@@ -1907,35 +2313,31 @@
 
   // --- Family setup screen --------------------------------------------------
 
-  var setupChoiceFirst = document.getElementById('setup-choice-first');
-  var setupChoicePair = document.getElementById('setup-choice-pair');
   var setupSecretForm = document.getElementById('setup-secret-form');
   var setupPairForm = document.getElementById('setup-pair-form');
-  var setupStatusEl = document.getElementById('setup-status');
+  var setupSecretStatus = document.getElementById('setup-secret-status');
+  var setupPairStatus = document.getElementById('setup-pair-status');
+  var setupDeviceLabel = document.getElementById('setup-device-label');
   var setupCancel = document.getElementById('setup-cancel');
 
-  function setupStatus(text) { setupStatusEl.textContent = text; }
-
-  function deviceLabel() {
-    return (navigator.platform || 'Tablet') + ' — ' + (state.name ? state.name + "'s" : 'family') + ' device';
+  function clearSetupStatus() {
+    setupSecretStatus.textContent = '';
+    setupPairStatus.textContent = '';
   }
 
-  setupChoiceFirst.addEventListener('click', function () {
-    setupPairForm.style.display = 'none';
-    setupSecretForm.style.display = 'flex';
-    setupStatus('');
-  });
-
-  setupChoicePair.addEventListener('click', function () {
-    setupSecretForm.style.display = 'none';
-    setupPairForm.style.display = 'flex';
-    setupStatus('');
-  });
+  // Whatever the grown-up typed, falling back to something identifiable so
+  // the Devices list isn't four rows of the same string.
+  function deviceLabel() {
+    var typed = setupDeviceLabel.value.trim();
+    if (typed) return typed;
+    return (navigator.platform || 'Tablet') + ' — ' + (state.name ? state.name + "'s" : 'family') + ' device';
+  }
 
   setupSecretForm.addEventListener('submit', async function (e) {
     e.preventDefault();
     var secret = document.getElementById('setup-secret-input').value.trim();
-    setupStatus('Setting up…');
+    clearSetupStatus();
+    setupSecretStatus.textContent = 'Setting up…';
     try {
       var data = await api('/api/family', {
         method: 'POST',
@@ -1946,16 +2348,19 @@
       saveDevice();
       boot();
     } catch (err) {
-      setupStatus(err.status === 409
-        ? 'A family already exists — use a pairing code from another tablet instead.'
-        : "That code didn't work. Ask a grown-up to check it.");
+      setupSecretStatus.textContent = err.status === 409
+        ? 'A family already exists — use a join code from another tablet instead.'
+        : err.status === 401
+          ? "That setup code didn't work — check it against the Cloudflare settings."
+          : err.message;
     }
   });
 
   setupPairForm.addEventListener('submit', async function (e) {
     e.preventDefault();
-    var code = document.getElementById('setup-pair-input').value.trim();
-    setupStatus('Connecting…');
+    var code = document.getElementById('setup-pair-input').value.trim().toUpperCase();
+    clearSetupStatus();
+    setupPairStatus.textContent = 'Connecting…';
     try {
       var data = await api('/api/pair', {
         method: 'POST',
@@ -1963,10 +2368,13 @@
       });
       device.token = data.token;
       device.familyId = data.familyId;
+      // A kid-bound code already picked who this tablet belongs to, so
+      // boot() goes straight past the kid picker to that kid's pets.
+      if (data.kidId) device.kidId = data.kidId;
       saveDevice();
       boot();
     } catch (err) {
-      setupStatus("That code didn't work — codes expire after 5 minutes and work once.");
+      setupPairStatus.textContent = "That code didn't work — codes expire after 5 minutes and work once.";
     }
   });
 
@@ -1985,9 +2393,33 @@
   });
 
   connectToggle.addEventListener('click', function () {
-    setupSecretForm.style.display = 'none';
-    setupPairForm.style.display = 'none';
-    setupStatus('');
+    clearSetupStatus();
+    setUiScreen('family-setup');
+  });
+
+  // Star-homeschool's signOut(), adapted: forget this tablet's family login
+  // locally so the setup screen — and with it the setup-code box — becomes
+  // reachable again. Without this there is no way back once device.token
+  // exists, which is exactly the hole you fall into after the family is
+  // rebuilt server-side and every stored token stops matching a row.
+  //
+  // Deliberately local-only, same as Star's: it does not revoke the device
+  // server-side. Use the Devices list for that (DELETE /api/devices/:id).
+  document.getElementById('disconnect-device').addEventListener('click', function () {
+    if (!window.confirm('Disconnect this tablet from the family? Your pet stays on this tablet, but it will stop syncing until you set it up again.')) return;
+    stopSyncPoll();
+    device.token = null;
+    device.familyId = null;
+    device.kidId = null;
+    device.petId = null;
+    saveDevice();
+    // The roster keeps playing locally from here, so drop the server's
+    // unlock progress and fall back to what this tablet banked itself.
+    serverCare = null;
+    // Server pet ids are meaningless without the family they belonged to.
+    roster.forEach(function (p) { p.id = null; });
+    saveState();
+    clearSetupStatus();
     setUiScreen('family-setup');
   });
 
@@ -2004,6 +2436,9 @@
   var pairingCodeStatusEl = document.getElementById('pairing-code-status');
   var pairingCodeRefresh = document.getElementById('pairing-code-refresh');
   var pairingCodeBack = document.getElementById('pairing-code-back');
+  var pairingScopeKid = document.getElementById('pairing-scope-kid');
+  var pairingScopeFamily = document.getElementById('pairing-scope-family');
+  var pairingScopeNote = document.getElementById('pairing-scope-note');
   var pairingCodeCountdownTimer = null;
   var pairingCodeExpiresAt = null;
 
@@ -2024,12 +2459,30 @@
     pairingCodeStatus('Expires in ' + secondsLeft + 's — one use only.');
   }
 
+  // Which kind of code the buttons above are currently minting. A kid-bound
+  // code drops the new tablet straight onto this kid's pets; a plain one
+  // sends it to the kid picker so a sibling can claim it.
+  var pairingBindKid = true;
+
+  function renderPairingScope() {
+    pairingScopeKid.classList.toggle('active', pairingBindKid);
+    pairingScopeFamily.classList.toggle('active', !pairingBindKid);
+    pairingScopeNote.textContent = pairingBindKid
+      ? 'The new tablet will open straight onto ' + (state.name ? state.name : 'your pet') +
+        " — same pets, same care days, either tablet."
+      : 'The new tablet will join the family and ask who is playing.';
+  }
+
   async function mintPairingCode() {
     stopPairingCodeCountdown();
+    renderPairingScope();
     pairingCodeDisplay.textContent = '------';
     pairingCodeStatus('Getting a code…');
     try {
-      var data = await api('/api/pairing-code', { method: 'POST' });
+      var data = await api('/api/pairing-code', {
+        method: 'POST',
+        body: { bindKid: pairingBindKid }
+      });
       // Split for readability (e.g. "AB3 F7Q") — purely cosmetic, the
       // space isn't part of the code the other tablet types in.
       pairingCodeDisplay.textContent = data.code.slice(0, 3) + ' ' + data.code.slice(3);
@@ -2041,7 +2494,23 @@
     }
   }
 
+  pairingScopeKid.addEventListener('click', function () {
+    if (pairingBindKid) return;
+    pairingBindKid = true;
+    mintPairingCode();
+  });
+
+  pairingScopeFamily.addEventListener('click', function () {
+    if (!pairingBindKid) return;
+    pairingBindKid = false;
+    mintPairingCode();
+  });
+
   addDeviceToggle.addEventListener('click', function () {
+    // A tablet that hasn't claimed a kid can only mint a family code, and
+    // the server would 403 the kid-bound one.
+    pairingBindKid = !!device.kidId;
+    pairingScopeKid.style.display = device.kidId ? '' : 'none';
     setUiScreen('add-device');
     mintPairingCode();
   });
@@ -2149,41 +2618,116 @@
   // state.name — the server has no rename endpoint yet (SPEC.md §9 Step
   // 10), so renaming stays a local cosmetic override rather than getting
   // stomped back to whatever was sent at pet-creation time on every poll.
+  function applyServerPetTo(target, p) {
+    target.id = p.id;
+    target.species = p.species;
+    target.colorVariant = p.colorVariant || 'base';
+    if (!target.name && p.name) target.name = p.name;
+    target.hunger = p.hunger;
+    target.happiness = p.happiness;
+    target.energy = p.energy;
+    target.cleanliness = p.cleanliness;
+    target.sleeping = p.sleeping;
+    target.createdAt = p.createdAt || target.createdAt;
+    target.lastUpdated = p.lastUpdated;
+    return target;
+  }
+
+  // Single-pet update from an action/PATCH response. Routes by id so a
+  // response that lands for a burrowed pet still updates the right roster
+  // entry rather than the one on screen.
   function applyServerPet(p) {
-    state.species = p.species;
-    state.colorVariant = p.colorVariant || 'base';
-    if (!state.name && p.name) state.name = p.name;
-    state.hunger = p.hunger;
-    state.happiness = p.happiness;
-    state.energy = p.energy;
-    state.cleanliness = p.cleanliness;
-    state.sleeping = p.sleeping;
-    state.lastUpdated = p.lastUpdated;
+    var target = roster.filter(function (r) { return r.id === p.id; })[0] || state;
+    applyServerPetTo(target, p);
     saveState();
   }
 
-  async function createServerPet(species, colorVariant, name) {
+  // Rebuilds the roster from a GET /api/pets response. The server is the
+  // authority on which pets exist and which one is active, so this is what
+  // makes a second tablet show the same three pets.
+  function applyServerRoster(data) {
+    if (data.care) serverCare = data.care;
+
+    var mine = data.pets.filter(function (p) { return p.kidId === device.kidId; });
+    if (!mine.length) return false;
+    // Hatch order, so the tiles keep their positions between polls instead
+    // of reshuffling under a kid's finger.
+    mine.sort(function (a, b) { return (a.createdAt || 0) - (b.createdAt || 0); });
+
+    // Match by id so locally-held fields survive — `name` in particular,
+    // which stays a device-local override until there's a rename endpoint.
+    var previous = roster;
+    roster = mine.map(function (p) {
+      var existing = previous.filter(function (r) { return r.id === p.id; })[0];
+      return applyServerPetTo(existing || defaultPet(), p);
+    });
+
+    var wanted = mine.filter(function (p) { return p.active; })[0] || mine[0];
+    activeIndex = mine.indexOf(wanted);
+    state = roster[activeIndex];
+    device.petId = state.id;
+    saveDevice();
+    saveState();
+    return true;
+  }
+
+  // Tells the server which pet is out of the burrow. Fire-and-forget: the
+  // strip has already switched locally, and a failure just means the next
+  // poll puts it back — better than blocking a tap on the network.
+  async function syncActivePet(petId) {
+    try {
+      var data = await api('/api/pets/' + petId, { method: 'PATCH', body: { active: true } });
+      applyServerPet(data.pet);
+      render();
+    } catch (err) {
+      /* next poll reconciles */
+    }
+  }
+
+  // `slot` is the roster entry the new pet should land in — an appended
+  // blank for an earned extra pet, or the existing slot 0 when this is the
+  // kid's first pet (or the local pet being uploaded on connect).
+  async function createServerPet(species, colorVariant, name, slot) {
     try {
       var data = await api('/api/pets', {
         method: 'POST',
         body: { species: species, colorVariant: colorVariant, name: name }
       });
+      if (data.care) serverCare = data.care;
+      applyServerPetTo(slot, data.pet);
+      // Everything else went into the burrow server-side when this hatched.
+      activeIndex = roster.indexOf(slot);
+      state = slot;
       device.petId = data.pet.id;
       saveDevice();
-      applyServerPet(data.pet);
+      saveState();
       startSyncedApp();
     } catch (err) {
-      // Creation only fails on a real backend problem (already has a pet,
-      // network down, etc) — send them back to the picker rather than
-      // stranding them on a blank screen.
+      // A 403 here is the earned-slot check — the kid hasn't banked enough
+      // good-care days yet (possible if a second tablet hatched a pet since
+      // this one last polled). Drop the empty slot again and say why rather
+      // than leaving a blank tile in the strip.
+      if (roster.length > 1 && !slot.species) {
+        roster.splice(roster.indexOf(slot), 1);
+        activeIndex = Math.min(activeIndex, roster.length - 1);
+        state = roster[activeIndex];
+        saveState();
+      }
+      if (err.status === 403) {
+        startSyncedApp();
+        statusText.textContent = err.message;
+        return;
+      }
+      // Anything else is a real backend problem — send them back to the
+      // picker rather than stranding them on a blank screen.
       setUiScreen('species-picker');
     }
   }
 
-  // Looks for a pet this kid already owns server-side; if none exists,
-  // either migrates the locally-raised pet in (a device that had a
-  // localStorage-only pet before connecting to the family) or falls
-  // through to the species picker for a brand-new pet.
+  // Loads every pet this kid owns server-side; if they own none, either
+  // migrates the locally-raised pet in (a device that had a localStorage-
+  // only pet before connecting to the family) or falls through to the
+  // species picker for a brand-new pet.
   async function resolveOrCreatePet() {
     var data;
     try {
@@ -2195,16 +2739,12 @@
       startLocalTick();
       return;
     }
-    var mine = data.pets.filter(function (p) { return p.kidId === device.kidId; })[0];
-    if (mine) {
-      device.petId = mine.id;
-      saveDevice();
-      applyServerPet(mine);
+    if (applyServerRoster(data)) {
       startSyncedApp();
       return;
     }
     if (state.species) {
-      await createServerPet(state.species, state.colorVariant, state.name);
+      await createServerPet(state.species, state.colorVariant, state.name, state);
       return;
     }
     setUiScreen('species-picker');
@@ -2228,11 +2768,21 @@
     }, 5000);
   }
 
+  // Counterpart to the above, for disconnecting: without it the 5 s poll
+  // keeps firing at a family this tablet has just left.
+  function stopSyncPoll() {
+    clearInterval(syncPollTimer);
+    syncPollTimer = null;
+  }
+
+  // Polls the whole roster in one request rather than one request per pet:
+  // GET /api/pets already decays and returns every pet in the family plus
+  // this kid's unlock progress, so three pets cost exactly what one did.
   async function pollPet() {
     if (!device.petId) return;
     try {
-      var data = await api('/api/pets/' + device.petId);
-      applyServerPet(data.pet);
+      var data = await api('/api/pets');
+      applyServerRoster(data);
       render();
     } catch (err) {
       // Offline or a transient failure — keep showing the last-known

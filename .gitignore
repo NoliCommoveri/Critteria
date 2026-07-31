@@ -1,0 +1,6 @@
+# Local wrangler state — the miniflare SQLite files behind
+# `wrangler dev` and `wrangler d1 execute --local`. Scratch data for
+# rehearsing migrations (SPEC.md §9 Step 5a); never the real database.
+.wrangler/
+
+node_modules/
