@@ -1298,8 +1298,8 @@ enforces the once-a-day rate limit via `helper_action_usage`
    second pet at 7 good-care days and a third at 21, capped at three,
    with the un-watched pets decaying at a tenth rate in the "burrow".
    Backend is `care_days` + `pets.active` (§3, §5 "Multiple pets");
-   frontend is the roster strip above the stage. Needs
-   `migrations/001-multi-pet-care-days.sql` applied before deploy.
+   frontend is the roster strip above the stage. A database created
+   from an older `schema.sql` needs the Step 5a reset first.
 5. **Nice-to-haves**: Durable Objects + WebSocket for live co-visit
    (transport upgrade over the polling shape in §2, no data-model
    change), push notifications, mini-games, guestbook/stickers, family
@@ -1333,9 +1333,9 @@ sw.js                    (planned) Service worker for PWA install/offline.
 wrangler.toml            Worker config: [assets] + [[d1_databases]].
 .assetsignore            What NOT to upload as public static assets.
 schema.sql               D1 schema (see Step 5 for the full contents).
-migrations/              One-shot D1 migrations for databases already
-                         carrying real data. Apply by hand with
-                         `wrangler d1 execute --file=`; see Step 5a.
+reset.sql                Drops every table, in reverse-dependency
+                         order, so schema.sql can be re-applied while
+                         there's no real data yet (Step 5a).
 functions/_lib/          Shared helpers imported by the handlers:
   auth.js                Bearer-token -> device/kid/family resolution.
   crypto.js              SHA-256 + token/id generation.
@@ -1465,10 +1465,9 @@ one's not yours, ignore it).
 
 Note the `PRAGMA foreign_keys = ON` at the top of the schema. An earlier
 draft of this section claimed D1 does not enforce FKs by default and
-that the schema's reliance on them was "theoretical" — **that is wrong,
-and writing migration 001 is what disproved it.** D1 enforces foreign
-keys, and it ignores every pragma normally used to get around them
-during a table rebuild:
+that the schema's reliance on them was "theoretical" — **that is wrong.**
+D1 enforces foreign keys, and it ignores every pragma normally used to
+get around them during a table rebuild:
 
 - `PRAGMA foreign_keys = OFF` is ignored; the `DROP TABLE` still fails.
 - `PRAGMA defer_foreign_keys = ON` defers the check to commit, where it
@@ -1478,10 +1477,14 @@ during a table rebuild:
   table instead of leaving it pointing at the name.
 
 All three were tried against a real local D1 (`wrangler d1 execute
---local`) before `migrations/001-multi-pet-care-days.sql` settled on
-parking child rows in constraint-free holding tables. **Test any table
-rebuild against `--local` before pointing it at `--remote`** — the
-family's real pets are in there.
+--local`) while working out how to drop the one-pet-per-kid UNIQUE
+constraint. The only ordering that survives is to park child rows in
+constraint-free holding tables (`CREATE TABLE x_backup AS SELECT * FROM
+x`), empty the children, swap the parent, then restore. That mattered
+enough to write down even though the multi-pet change ended up shipping
+via Step 5a's drop-and-recreate instead, because the next schema change
+made *after* the family is playing will hit exactly this. **Test any
+table rebuild against `--local` before pointing it at `--remote`.**
 
 #### schema.sql
 
@@ -1533,7 +1536,7 @@ CREATE TABLE pairing_codes (
 -- kid_id is deliberately NOT UNIQUE — a kid may own up to three pets,
 -- but only as many as they've earned (§5 "Multiple pets"); the cap lives
 -- in POST /api/pets, not here. An existing database gets to this shape
--- via migrations/001-multi-pet-care-days.sql.
+-- by dropping and re-applying it (§9 Step 5a).
 CREATE TABLE pets (
   id            TEXT PRIMARY KEY,
   kid_id        TEXT NOT NULL REFERENCES kids(id),
@@ -1622,31 +1625,34 @@ CREATE TABLE pet_current_location (
 );
 ```
 
-### Step 5a — Migrations (for a database that already has data)
+### Step 5a — Reschema an existing database (no real data yet)
 
-`schema.sql` is the shape a *fresh* database is created in. A database
-that's already carrying the family's pets gets there through the one-shot
-files in `migrations/`, applied by hand, oldest first:
+`schema.sql` is always the current shape. While the app has no real
+users, a database created from an older `schema.sql` is brought up to
+date by **dropping every table and re-applying it** — there is no reason
+to write a migration for data that doesn't exist:
 
 ```
-# Always rehearse against the local copy first — it catches the D1
-# pragma behavior described above, which silently differs from plain
-# SQLite and will otherwise fail against the real data.
-npx wrangler d1 execute critteria --local  --file=./migrations/001-multi-pet-care-days.sql
-npx wrangler d1 execute critteria --remote --file=./migrations/001-multi-pet-care-days.sql
+# Rehearse locally first, always.
+npx wrangler d1 execute critteria --local  --file=./reset.sql
+npx wrangler d1 execute critteria --local  --file=./schema.sql
+npx wrangler d1 execute critteria --remote --file=./reset.sql
+npx wrangler d1 execute critteria --remote --file=./schema.sql
 ```
 
-**Apply the migration before pushing the Worker that needs it.** A
-`--file` batch is atomic on D1, so a failed migration leaves the
-database untouched — but a Worker deployed against a schema that hasn't
-migrated yet will 500 on the endpoints that use the new columns. The
-reverse order is harmless: an older Worker ignores columns it doesn't
-know about.
+`reset.sql` drops in reverse-dependency order (children before parents,
+`pets` before `kids` before `families`), which matters because D1
+enforces foreign keys — see the note under Step 5.
 
-- `001-multi-pet-care-days.sql` — drops the one-pet-per-kid UNIQUE
-  constraint, adds `pets.active`, and creates `care_days` (§5 "Multiple
-  pets"). Read its header comment before touching it; the ordering is
-  load-bearing.
+**This stops being an option the moment the family is actually playing.**
+From then on a schema change needs a real migration, applied before the
+Worker that depends on it is deployed: a Worker running against an
+un-migrated schema 500s on any endpoint touching the new columns, while
+the reverse order is harmless because an older Worker just ignores
+columns it doesn't know about. Rebuilding a table under D1 is genuinely
+awkward — read the Step 5 note on pragmas first, and rehearse against
+`--local` with a copy of the real data before ever pointing it at
+`--remote`.
 
 ### Step 6 — Bind D1 in wrangler.toml (done)
 
@@ -1956,14 +1962,15 @@ and the app keeps working from `localStorage` — no data lives on the
 server until Step 9. Delete the Worker and D1 database and you are
 exactly where you started.
 
-Migrations (Step 5a) are the exception: `001` rebuilds `pets`, and
-there is no down-migration. Rolling the *Worker* back past it is safe —
-the old code simply ignores `pets.active` and `care_days`, and every
-kid's first pet still loads, because a rolled-back client reads the
-flat v1 copy `saveState()` keeps at the top level of `localStorage`. A
-kid's second and third pets are inert while rolled back, not lost: the
-rows stay in D1 and the roster stays in `localStorage.pets`, and both
-come back when the Worker is rolled forward again.
+Schema changes are the exception, and Step 5a's drop-and-recreate is
+destructive by design — it's only the right move because nobody is
+playing yet. Rolling the *Worker* back over the multi-pet change is
+safe on its own: the old code ignores `pets.active` and `care_days`,
+and every kid's first pet still loads, because a rolled-back client
+reads the flat v1 copy `saveState()` keeps at the top level of
+`localStorage`. Second and third pets go inert rather than being lost —
+the rows stay in D1, the roster stays in `localStorage.pets`, and both
+come back when the Worker rolls forward again.
 
 ### Free-tier headroom
 
