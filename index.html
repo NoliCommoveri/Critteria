@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Immotus Pet — Prototype</title>
 <meta name="theme-color" content="#faf7f2">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="assets/icon-192.png">
+<!-- iOS ignores the manifest for home-screen installs; these are its own hooks. -->
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Critteria">
 <style>
   :root {
     color-scheme: light dark;
@@ -2948,6 +2955,16 @@
   }
 
   boot();
+
+  // Register the service worker for install + offline shell/asset caching
+  // (SPEC.md §9 file layout). Purely additive: the app already runs fully
+  // offline from localStorage without it, so a registration failure (e.g.
+  // unsupported browser) is silently ignored rather than surfaced to kids.
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('sw.js').catch(function () {});
+    });
+  }
 })();
 </script>
 </body>

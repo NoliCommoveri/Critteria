@@ -1333,8 +1333,12 @@ the app runs on `localStorage` alone, identical to today.
 
 ```
 index.html               Frontend PWA (existing).
-assets/                  Sprites, palettes, reference art (existing).
-sw.js                    (planned) Service worker for PWA install/offline.
+assets/                  Sprites, palettes, reference art, and the app
+                         icons (icon-192.png, icon-512.png,
+                         apple-touch-icon.png).
+manifest.webmanifest     Web app manifest — see "PWA install" below.
+sw.js                    Service worker for PWA install/offline — see
+                         "PWA install" below.
 wrangler.toml            Worker config: [assets] + [[d1_databases]].
 .assetsignore            What NOT to upload as public static assets.
 schema.sql               D1 schema (see Step 5 for the full contents).
@@ -1975,6 +1979,46 @@ Not wired into the frontend by this pass, left for later: gifting
 the presence badge (`GET /api/pets/:id/events` returns one, nothing
 reads it yet). Both are additive — neither touches the sync plumbing
 above.
+
+### Step 11 — PWA install (done)
+
+`manifest.webmanifest` (icons, `display: standalone`, `theme_color` /
+`background_color` matching the existing `<meta name="theme-color">`) and
+`sw.js` are both served from the repo root by the same `[assets]` binding
+as everything else — no `.assetsignore` change needed, since that file
+only lists what to *exclude*.
+
+`index.html` links the manifest and registers the worker
+(`navigator.serviceWorker.register('/sw.js')`, `window.onload`-gated, with
+a swallowed rejection) right after `boot()`, so a browser that doesn't
+support service workers just skips it — install/offline is additive on
+top of the existing localStorage-first design, not a requirement for the
+app to run.
+
+`sw.js` runs two caches:
+- **App shell** (`/`, `/index.html`, `/manifest.webmanifest`, the two
+  icon files): network-first, so a foregrounded device with connectivity
+  always gets the latest deploy, falling back to cache when offline.
+- **`assets/*`**: cache-first, populated lazily as sprites are requested
+  (no hardcoded manifest of every PNG to keep in sync — same reasoning as
+  `SPECIES_POSES` itself only listing what exists). Sprites are
+  effectively immutable (a redrawn pose gets a new filename per §4
+  "Adding a pose"), so a stale cache entry isn't a real risk, and this is
+  what lets a previously-visited species keep rendering fully offline.
+
+`/api/*` is explicitly never intercepted — the fetch handler returns
+early on that path prefix, so pet sync always hits the network (or fails
+and falls through to the app's own offline/localStorage handling)
+regardless of what the service worker has cached.
+
+Icons (`assets/icon-192.png`, `assets/icon-512.png`,
+`assets/apple-touch-icon.png`) are a placeholder T-Rex-on-background
+composite, generated rather than hand-drawn; swap them for real app art
+whenever that's ready — nothing else references the source images.
+
+Cache name constants (`CACHE_NAME`, `ASSET_CACHE_NAME` in `sw.js`) are
+versioned by hand; bump them whenever shell files change so returning
+clients don't get stuck on a stale cached `index.html`.
 
 ### Rollback
 
