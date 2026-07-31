@@ -134,6 +134,7 @@ function applyEffect(pet, action) {
     pet.happiness = clamp2(pet.happiness + 20);
     pet.energy = clamp2(pet.energy - 3);
     pet.hunger = clamp2(pet.hunger - 2);
+    pet.cleanliness = clamp2(pet.cleanliness - 10);
   } else if (action === "clean") {
     pet.cleanliness = 100;
   } else if (action === "sleep") {
