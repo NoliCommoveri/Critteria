@@ -90,11 +90,22 @@ Live tables (v1):
   does not), label ("Ana's tablet"), created_at, last_seen, revoked.
 - `pairing_codes` — code_hash (SHA-256 of 6-char code), family_id,
   expires_at (5-min TTL), used_at (non-null once redeemed; single use).
-- `pets` — id, kid_id (one pet per kid, UNIQUE), species, color_variant,
-  name, stage, created_at, hunger, happiness, energy, cleanliness,
-  sleeping, last_updated (server epoch ms; **decay is computed lazily on
+- `pets` — id, kid_id, species, color_variant, name, stage, created_at,
+  hunger, happiness, energy, cleanliness, sleeping, active,
+  last_updated (server epoch ms; **decay is computed lazily on
   every read/write**, same pattern as the current `localStorage`
-  prototype's `applyDecay` — see `index.html`).
+  prototype's `applyDecay` — see `index.html`). kid_id is deliberately
+  **not** UNIQUE: a kid may own up to three pets, but only as many as
+  they've earned through `care_days` (§5 "Multiple pets"), and that cap
+  is enforced in `POST /api/pets` rather than by the schema. Exactly one
+  of a kid's pets has `active = 1` — the one on screen; the rest decay at
+  `BURROW_DECAY_MULTIPLIER` of the normal rate.
+- `care_days` — kid_id, utc_day ('YYYY-MM-DD'), pet_id, earned_at, with
+  **PRIMARY KEY (kid_id, utc_day)** so a kid banks at most one day per
+  day. Cumulative and append-only: nothing ever deletes from here, so a
+  missed day stalls progress without resetting it. `INSERT OR IGNORE` is
+  the correct verb here — unlike `helper_action_usage` below, a duplicate
+  means "today already counted", not a rate limit that has to surface.
 - `pet_events` — id (autoincrement), pet_id, actor_kid_id, action
   (`feed`/`play`/`clean`/`sleep`/`wake`/`visit`/`gift`), occurred_at,
   detail (optional JSON — gift contents etc.). Append-only; doubles as
@@ -992,20 +1003,81 @@ That is the whole code delta — with it in place, wiring the art is still
 the promised one-entry registration. The synthesized `playCrackSound()`
 noise burst reads fine as shell-on-shell knock and stays as-is.
 
-### Species selection
-Species is picked once, at first launch, and then locked for the life of
-that pet — `index.html` shows a dedicated "Choose your pet!" screen
-when no species is stored yet, and once one is picked the picker is hidden
-and the choice is written to `localStorage` (and later, `pets.species` in
-D1) permanently. Kids don't get a species switcher in the main app.
+### Multiple pets
+Shipped. A kid starts with one pet and **earns** the right to more, up to
+three total. The notes below are the design rationale plus the parts a
+future change has to respect.
 
-This is deliberately not user-switchable yet. A later phase can add a
-gated way to change species post-creation (e.g., unlocked via a care
+**Earning.** A *good-care day* is banked when a kid performs any care
+action on **their own** pet and leaves it with the four stats averaging
+`GOOD_CARE_AVG` (70) or better. At most one per UTC day, written by
+`POST /api/pets/:id/action` into `care_days`. Helper actions on a
+sibling's pet deliberately never count — the check is the `isOwnPet`
+branch in `action.js`, and dropping it would let a kid farm slots off
+their brother's pet without ever feeding their own.
+
+**Spending.** `UNLOCK_AT_DAYS = [7, 21]` in `functions/_lib/care.js`:
+pet two at 7 banked days, pet three at 21, hard cap 3. Counting is
+**cumulative, not a streak** — a missed day fails to advance the count
+but never resets it. That's a deliberate choice against the more
+motivating streak version: with four kids, a stomach bug or a weekend at
+a grandparent's would otherwise wipe out a week of real effort, and a
+mechanic that punishes being six years old with a cold is worse than one
+that's slightly too forgiving. `index.html` mirrors all of these
+constants for the offline path; they have to be changed in both places
+or a tablet's progress jumps when it connects.
+
+**The burrow.** Exactly one of a kid's pets is `active`. The rest decay
+at `BURROW_DECAY_MULTIPLIER` (0.1) of the normal rate. Without this,
+three pets would mean three times the daily upkeep and all three would
+sit at sad, which defeats the point of earning them. The multiplier is
+tuned against two cases: a burrowed pet is visibly hungry but *not* sad
+after a weekend away (~32 hunger at 48 h), and does go sad if genuinely
+forgotten for most of a week. 0.2 was tried first and starved a burrowed
+pet flat in 40 hours. The invariant — exactly one `active = 1` row per
+kid — is maintained as a `batch()` in `POST /api/pets` (a new pet
+burrows the others) and `PATCH /api/pets/:id` (the roster strip's
+switcher). Decay is always settled *before* the flag flips, so each
+stretch is billed at the rate it was actually lived at.
+
+**Reads.** The synced client polls `GET /api/pets`, which already
+returned every pet in the family and now also carries the caller's
+`care` block. One request covers the whole roster plus unlock progress,
+so three pets cost no more traffic than one did — the §9 free-tier
+headroom numbers are unchanged.
+
+**Frontend shape.** `state` is a *reference into* the `roster` array
+rather than a copy, so every existing `state.hunger = …` write mutates
+the roster entry directly and the render/action code never had to learn
+about multiple pets. `localStorage` carries the roster under `pets`,
+plus a flat copy of the active pet at the top level in the old v1 shape
+— so rolling this release back (§9 "Rollback") leaves the old code
+reading the pet the kid was last looking at instead of dropping them on
+the species picker.
+
+**Art.** Hatching an earned pet replays the full hatch sequence, which
+only T-Rex, Dragon and Hippocampus have frames for today (see "Hatching
+/ birth sequence"). The other three still appear instantly. That's the
+existing fallback, not a new gap, but it does mean the reward lands
+harder for some species than others until the remaining frames exist.
+
+### Species selection
+Species is picked once per pet, at hatch, and then locked for the life of
+that pet — `index.html` shows the "Choose your pet!" screen when the
+active roster slot has no species yet, and once one is picked the choice
+is written to `localStorage` (and `pets.species` in D1) permanently.
+Kids don't get a species switcher in the main app.
+
+An individual pet's species is still deliberately not user-switchable. A
+later phase can add a gated way to change it post-creation (e.g. a care
 streak or points threshold, mirroring the accessory-unlock mechanic
 below) rather than leaving it freely swappable, which would undercut the
-"raising one pet" framing. The one-time-pick guard in `index.html` is a
-single `if (state.species) return;` check in the species button handler —
-swap that for the real gating condition when this ships.
+"raising this pet" framing. The guard in `index.html` is
+`if (state.species && !pendingNewPet) return;` in the species button
+handler — the `pendingNewPet` half is the earned-extra-pet path from
+"Multiple pets" above, which is a *new* pet rather than a re-pick, so
+swap only the `state.species` half for the real gating condition when
+re-picking ships.
 
 ### Accessories
 Equip via `pet_equipped_items`. Rendered as image overlays positioned per
@@ -1155,6 +1227,12 @@ enforces the once-a-day rate limit via `helper_action_usage`
    every gotcha we've hit are in §9.
 4. **End-state features**: lifecycles/aging, accessories, locations
    (color variants already landed on `main` as palette-remap work).
+   Multiple pets also landed here ahead of the rest — a kid earns a
+   second pet at 7 good-care days and a third at 21, capped at three,
+   with the un-watched pets decaying at a tenth rate in the "burrow".
+   Backend is `care_days` + `pets.active` (§3, §5 "Multiple pets");
+   frontend is the roster strip above the stage. Needs
+   `migrations/001-multi-pet-care-days.sql` applied before deploy.
 5. **Nice-to-haves**: Durable Objects + WebSocket for live co-visit
    (transport upgrade over the polling shape in §2, no data-model
    change), push notifications, mini-games, guestbook/stickers, family
@@ -1188,6 +1266,14 @@ sw.js                    (planned) Service worker for PWA install/offline.
 wrangler.toml            Worker config: [assets] + [[d1_databases]].
 .assetsignore            What NOT to upload as public static assets.
 schema.sql               D1 schema (see Step 5 for the full contents).
+migrations/              One-shot D1 migrations for databases already
+                         carrying real data. Apply by hand with
+                         `wrangler d1 execute --file=`; see Step 5a.
+functions/_lib/          Shared helpers imported by the handlers:
+  auth.js                Bearer-token -> device/kid/family resolution.
+  crypto.js              SHA-256 + token/id generation.
+  decay.js               Lazy decay, burrow rate, pet serialization.
+  care.js                Good-care days and the pet slots they unlock.
 functions/api/           Pages-Functions-style API handlers:
   family.js              POST — create family (SIGNUP_SECRET-gated).
   pairing-code.js        POST — mint a pairing code (auth'd).
@@ -1201,11 +1287,17 @@ functions/api/           Pages-Functions-style API handlers:
   kids/[id]/claim.js     POST — bind current device to a kid.
   devices.js             GET — list family's devices.
   devices/[id].js        DELETE — revoke a device.
-  pets.js                GET, POST — list/create pets in family.
+  pets.js                GET — every pet in the family plus the caller's
+                         own care/unlock progress (this is what a synced
+                         client polls). POST — hatch a pet, gated on the
+                         caller's earned slot count.
   pets/[id].js           GET — server-computed pet state (lazy decay).
-                         PATCH — update color_variant (own pet only).
+                         PATCH — update color_variant and/or make this
+                         the kid's active (un-burrowed) pet. Own pet only.
   pets/[id]/action.js    POST — feed/play/clean/sleep/wake (own pet
                          always; sibling pet gated by helper_action_usage).
+                         Banks a care_days row when the action leaves the
+                         caller's OWN pet above the good-care average.
   pets/[id]/gift.js      POST — send a gift (writes pet_events).
   pets/[id]/events.js    GET — recent events (presence + short history).
 dist/worker/index.js     Bundled Worker script. Committed because
@@ -1304,13 +1396,25 @@ the D1 Console lists `families`, `kids`, `devices`, `pairing_codes`,
 catalog tables (Cloudflare's own `_cf_KV` table also appears — that
 one's not yours, ignore it).
 
-Note the `PRAGMA foreign_keys = ON` at the top of the schema: D1
-supports FKs but does not enforce them by default. **The pragma applies
-per-connection, and a git-deployed Worker does not run it at request
-time** — so the schema's reliance on FK enforcement is currently
-theoretical, not actually active in production. Real enforcement would
-need `PRAGMA foreign_keys = ON` run at the top of the request handler,
-not just once at schema setup. Track carefully.
+Note the `PRAGMA foreign_keys = ON` at the top of the schema. An earlier
+draft of this section claimed D1 does not enforce FKs by default and
+that the schema's reliance on them was "theoretical" — **that is wrong,
+and writing migration 001 is what disproved it.** D1 enforces foreign
+keys, and it ignores every pragma normally used to get around them
+during a table rebuild:
+
+- `PRAGMA foreign_keys = OFF` is ignored; the `DROP TABLE` still fails.
+- `PRAGMA defer_foreign_keys = ON` defers the check to commit, where it
+  fails anyway and rolls the whole batch back.
+- `PRAGMA legacy_alter_table = ON` is ignored, so `ALTER TABLE … RENAME`
+  rewrites every child table's `REFERENCES` clause to follow the renamed
+  table instead of leaving it pointing at the name.
+
+All three were tried against a real local D1 (`wrangler d1 execute
+--local`) before `migrations/001-multi-pet-care-days.sql` settled on
+parking child rows in constraint-free holding tables. **Test any table
+rebuild against `--local` before pointing it at `--remote`** — the
+family's real pets are in there.
 
 #### schema.sql
 
@@ -1359,9 +1463,13 @@ CREATE TABLE pairing_codes (
   used_at     INTEGER                 -- non-null once redeemed; single use
 );
 
+-- kid_id is deliberately NOT UNIQUE — a kid may own up to three pets,
+-- but only as many as they've earned (§5 "Multiple pets"); the cap lives
+-- in POST /api/pets, not here. An existing database gets to this shape
+-- via migrations/001-multi-pet-care-days.sql.
 CREATE TABLE pets (
   id            TEXT PRIMARY KEY,
-  kid_id        TEXT NOT NULL UNIQUE REFERENCES kids(id),  -- one pet per kid
+  kid_id        TEXT NOT NULL REFERENCES kids(id),
   species       TEXT NOT NULL,
   color_variant TEXT,
   name          TEXT,
@@ -1372,9 +1480,26 @@ CREATE TABLE pets (
   energy        REAL NOT NULL DEFAULT 80,
   cleanliness   REAL NOT NULL DEFAULT 80,
   sleeping      INTEGER NOT NULL DEFAULT 0,
+  -- Exactly one pet per kid is active (the one on screen); the rest are
+  -- "in the burrow" and decay at BURROW_DECAY_MULTIPLIER of the normal
+  -- rate. Written only by POST /api/pets and PATCH /api/pets/:id.
+  active        INTEGER NOT NULL DEFAULT 1,
   last_updated  INTEGER NOT NULL      -- server epoch ms; decay applied lazily
 );
 CREATE INDEX idx_pets_kid ON pets(kid_id);
+
+-- One row per kid per UTC day on which they left one of their own pets
+-- above the good-care average. Cumulative — nothing deletes from here, so
+-- a missed day stalls progress without resetting it. INSERT OR IGNORE is
+-- correct here (a duplicate means "already counted today"), which is the
+-- opposite of the helper_action_usage rule below.
+CREATE TABLE care_days (
+  kid_id     TEXT NOT NULL REFERENCES kids(id),
+  utc_day    TEXT NOT NULL,           -- 'YYYY-MM-DD' (UTC)
+  pet_id     TEXT NOT NULL REFERENCES pets(id),
+  earned_at  INTEGER NOT NULL,
+  PRIMARY KEY (kid_id, utc_day)
+);
 
 CREATE TABLE pet_events (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1429,6 +1554,32 @@ CREATE TABLE pet_current_location (
   location_id  TEXT NOT NULL REFERENCES locations(id)
 );
 ```
+
+### Step 5a — Migrations (for a database that already has data)
+
+`schema.sql` is the shape a *fresh* database is created in. A database
+that's already carrying the family's pets gets there through the one-shot
+files in `migrations/`, applied by hand, oldest first:
+
+```
+# Always rehearse against the local copy first — it catches the D1
+# pragma behavior described above, which silently differs from plain
+# SQLite and will otherwise fail against the real data.
+npx wrangler d1 execute critteria --local  --file=./migrations/001-multi-pet-care-days.sql
+npx wrangler d1 execute critteria --remote --file=./migrations/001-multi-pet-care-days.sql
+```
+
+**Apply the migration before pushing the Worker that needs it.** A
+`--file` batch is atomic on D1, so a failed migration leaves the
+database untouched — but a Worker deployed against a schema that hasn't
+migrated yet will 500 on the endpoints that use the new columns. The
+reverse order is harmless: an older Worker ignores columns it doesn't
+know about.
+
+- `001-multi-pet-care-days.sql` — drops the one-pet-per-kid UNIQUE
+  constraint, adds `pets.active`, and creates `care_days` (§5 "Multiple
+  pets"). Read its header comment before touching it; the ordering is
+  load-bearing.
 
 ### Step 6 — Bind D1 in wrangler.toml (done)
 
@@ -1737,6 +1888,15 @@ the hosting change at Step 2 goes badly, revert the Worker deployment
 and the app keeps working from `localStorage` — no data lives on the
 server until Step 9. Delete the Worker and D1 database and you are
 exactly where you started.
+
+Migrations (Step 5a) are the exception: `001` rebuilds `pets`, and
+there is no down-migration. Rolling the *Worker* back past it is safe —
+the old code simply ignores `pets.active` and `care_days`, and every
+kid's first pet still loads, because a rolled-back client reads the
+flat v1 copy `saveState()` keeps at the top level of `localStorage`. A
+kid's second and third pets are inert while rolled back, not lost: the
+rows stay in D1 and the roster stays in `localStorage.pets`, and both
+come back when the Worker is rolled forward again.
 
 ### Free-tier headroom
 

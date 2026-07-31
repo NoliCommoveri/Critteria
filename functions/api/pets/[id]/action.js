@@ -1,5 +1,6 @@
 import { authenticate, unauthorized } from '../../../_lib/auth.js';
 import { applyDecay, persistPet, serializePet } from '../../../_lib/decay.js';
+import { careSummary, recordCareDay } from '../../../_lib/care.js';
 
 function clamp(v) {
   return Math.max(0, Math.min(100, v));
@@ -78,13 +79,27 @@ export async function onRequestPost({ request, env, params }) {
     return Response.json({ error: 'pet is already in that state' }, { status: 409 });
   }
 
-  const decayed = applyDecay(pet, Date.now());
+  const now = Date.now();
+  const decayed = applyDecay(pet, now);
   applyEffect(decayed, action);
   await persistPet(env.DB, decayed);
 
   await env.DB.prepare(
     'INSERT INTO pet_events (pet_id, actor_kid_id, action, occurred_at) VALUES (?, ?, ?, ?)'
-  ).bind(pet.id, device.kidId, action, Date.now()).run();
+  ).bind(pet.id, device.kidId, action, now).run();
 
-  return Response.json({ pet: serializePet(decayed) });
+  // Looking after your own pet well enough to leave it above the good-care
+  // average banks today toward the next pet slot (SPEC.md §5 "Multiple
+  // pets"). Helping a sibling's pet never counts — that path is the
+  // !isOwnPet branch above, and letting it count would make slots farmable
+  // off someone else's pet.
+  let care = null;
+  if (isOwnPet) {
+    await recordCareDay(env.DB, device.kidId, decayed, now);
+    // Returned so the roster strip's progress updates the moment a kid
+    // earns a day, instead of waiting for the next poll.
+    care = await careSummary(env.DB, device.kidId, now);
+  }
+
+  return Response.json({ pet: serializePet(decayed), care });
 }
