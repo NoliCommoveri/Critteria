@@ -665,10 +665,332 @@ the same shape as a `SPECIES_POSES` registration.
   internally with their own species' poses.
   `reference/dragon-egg-reference-4x.png` holds all four hatch frames (4x)
   for attaching when generating dragon's action poses next.
-- ⬜ Unicorn, pegasus, hippocampus, wolf — no hatch art yet; picking these
-  species still skips straight to instant pet creation. Remaining work is
+- ✅ Hippocampus — **complete**: all four frames drawn, cleaned, and
+  wired, plus a bubble layer unique to this species. Plan and build notes
+  in
+  "Hippocampus hatch sequence (planned)" below. Departs from the other
+  two in that it isn't an egg at all: a mussel shell on the seabed that
+  opens to reveal the baby. Everything else about the sequence — beat
+  timing, shake classes, frame keys, crack sound — is unchanged; the only
+  code delta was making the opening caption overridable, which is
+  already in.
+
+  `hippocampus-egg.png` (closed shell on sand) is the first frame.
+  Registration used the curled-`sleep`-pose approach rather than the egg
+  species' height fill, since a closed shell is wide and low: scaled by
+  width with the shell at 103px and the ground line on row 116, content
+  occupying rows 60–116. The composite lands at 81.2% width fill —
+  the same number `trex-sleep.png` independently landed on.
+
+  Took two generations, and the difference is worth recording because it
+  is a *prompt* fix, not a cleanup fix. The first came back with a sand
+  mound 1.177× the shell's width, which at the fixed 103px shell anchor
+  pushed the composite to 121px — 94.5% canvas fill, 3px margins, well
+  outside the 75–85% rule. Asking for "a small mound, roughly 10% wider
+  than the shell, not a broad beach" brought the ratio to 1.005. Nothing
+  in cleanup can fix that: the shell width is the anchor that has to hold
+  across all four frames, so an oversized sand mound has nowhere to go.
+  The re-roll also fixed the highlight for free — the first generation's
+  specular came through as six scattered pixels in a broken diagonal (the
+  fragmented-highlight shape dragon hit), where the re-roll's is a single
+  connected 11px cluster needing no hand repair.
+
+  `hippocampus-egg-crack1.png` (shell parted by a sliver, glow along the
+  lip) followed, generated with frame 1 attached. Registration held
+  exactly: the shell box is x 12–115, 104px wide, **identical** to frame
+  1, with the top edge 2px higher — the lid lifting, which is the point.
+  The raw generation drifted +2.4% in shell width and +0.6% in
+  sand/shell ratio, both normalized away by scaling to the 103px anchor.
+
+  This frame forced a fix to the crop step worth keeping. Frame 1 centred
+  the *composite* bounding box on the canvas, which was fine when the
+  sand and shell were the same width. Frame 2 has bubbles detached from
+  the shell out to its left, so composite-centring would have shoved the
+  shell right by half the bubbles' overhang — silent drift of exactly the
+  kind that makes the sequence read as a pan. The crop now anchors
+  explicitly on **the shell's centre → canvas x 64, and the sand's bottom
+  → row 116**, with everything else free to extend where it likes. Frames
+  3–4 need this even more, since an open lid and a hatchling both grow
+  the composite asymmetrically.
+
+  The bubbles were **stripped rather than kept**, per the same rule §5
+  states for food and soap: items are separate files, never drawn into a
+  pose. Baked-in bubbles would shake with the shell and sit frozen for
+  the frame's full 3.2s, when what the sequence wants is bubbles rising
+  independently of the shake. Detecting them is easy — they are connected
+  components disjoint from the main silhouette — so the cleanup script
+  drops every component but the largest.
+
+  `hippocampus-egg-crack2.png` (half open, rose interior visible, the
+  baby sitting in the bowl) is frame 3, and the first frame where the
+  shell interior and the creature share a canvas. Registration held again
+  — shell box x 11–115 against frame 1's x 12–115, sand bottom on row
+  116 — even though the raw generation came back 6.9% smaller, because
+  the whole composition scaled together. Content occupies rows 31–116,
+  leaving 18 rows of headroom; frame 4 does not need them, since the lid
+  is already the tallest element and a hatchling sitting up grows into
+  the bowl's empty space rather than above the shell.
+
+  **Check the lid's form, not just its registration.** Frame 3 took two
+  generations, and the first one passed every automated check —
+  registration within a pixel, palette clean, speckle 3.1% — while being
+  wrong in a way none of those measure: it drew the opened upper shell as
+  a *concave bowl*, a second cup facing the viewer, where frames 1–2
+  establish it as a convex ridged dome. Rose interior filled 35% of the
+  lid region against the correct version's 28%, because a lid turned
+  inside-out shows lining that should not be visible at all. Registration
+  metrics compare bounding boxes; they say nothing about whether a form
+  stayed the same solid. When a frame rotates a part, compare that part's
+  *shape* against the earlier frames by eye before cleaning it.
+
+  **Never put the whole combined palette in front of the quantizer.**
+  Frame 3 was first run against all 17 colours, and `#0f445c` — a locked
+  ramp entry meant for the creature's dark accents — scattered
+  baby-coloured pixels across the entire shell. It is not a
+  minimum-distance failure; every pair in the palette is ≥60 apart. It is
+  that `#0f445c` lands *on the line between* two other entries: the
+  midpoint of the shell's dark band `#4c5566` and the outline `#103133`
+  sits 34.7 from `#0f445c` but 43.3 from either endpoint, so every
+  antialiased shell edge snapped to it. Minimum pairwise distance says
+  nothing about this case — an entry can be far from all others and still
+  sit inside the segment joining two of them. Dropping `#0f445c` and the
+  redundant near-whites (14 colours instead of 17) cut speckle from 3.9%
+  to 3.1% and confined the baby's body colours to x 63–82, the head,
+  where they belong. Quantize each frame against the colours that frame
+  legitimately contains, nothing more.
+
+  The related trap: the stray-glow revert rule from frame 2 must **not**
+  run on frames containing the creature. The baby's light teals are the
+  same values as the glow, so the rule would erase its highlights as
+  "disconnected glow". Frame 3 relies on the tightened palette instead.
+
+  `hippocampus-hatch.png` is the reveal: the hatchling sitting up in the
+  open shell, white body, teal mane and fins, tail curled beside it. The
+  creature measures 38×41px against frame 3's 26×14 — 2.9× taller, and
+  39% of the adult idle sprite's 104px height. That ratio is the frame's
+  actual job: an earlier attempt drew the hatchling at the same 14px
+  height as the peek, which read as a pretty shell with a smudge in it
+  rather than as the payoff, and cut hard to a 103px idle sprite seconds
+  later. Content occupies rows 22–116. Speckle is 4.6%, the highest in
+  the set, from the face's fine detail; not visible at display size.
+
+  Wired into `HATCH_SEQUENCES` with the `intro` override, so picking
+  hippocampus now plays the full sequence instead of falling through to
+  instant creation.
+
+  **Anchor the mean of shell and sand, not either one.** Scaling each
+  frame by the shell alone pinned the shell at exactly 103px but let the
+  sand breathe 7.4px across the set (103.5 / 104.4 / 100.3 / 107.7),
+  because the generator never held the sand/shell ratio constant
+  (1.005 / 1.014 / 0.974 / 1.046). Scaling by the sand alone just moves
+  that same 7.4px onto the shell, since frames 3–4 legitimately change
+  the lid's angle and so genuinely change the shell's silhouette width.
+  Anchoring the mean of the two splits the error: all four frames were
+  re-cleaned that way and both now spread 3.7px. Vertically the anchor is
+  unchanged — the sand's bottom row is the ground line at row 116.
+
+  The re-clean also made the per-frame fixes algorithmic rather than
+  coordinate-based, so they survive a change of scale: stray-glow revert
+  and specular extension run only on frames with no creature in them, and
+  the white-speckle rule is likewise gated. That gate matters — run
+  unguarded on the reveal frame it deletes the hatchling's eye glints,
+  which are legitimate 1px white components. The rule cannot tell a
+  sparkle from a speck, so it only runs where sparkles cannot occur.
+
+  **Bubbles are a layer, not art.** `assets/bubble-sm/-md/-lg.png` are
+  hand-authored rather than generated — 5, 7 and 9px hollow rims with a
+  single specular pixel, on 16×16 canvases, every pixel a locked-ramp
+  entry. At that size a generated bubble would be a lumpy circle needing
+  cleanup, where placing ~15 pixels by hand costs nothing and quantizes
+  to nothing. The rim is `#8fd1d3` rather than the softer `#a4e4de`: the
+  stage's own background is `#cdeaf7`, and `#a4e4de` sits only 48 from it
+  in RGB where `#8fd1d3` sits 76, so the softer value nearly vanished
+  against the water.
+
+  They are spawned as elements into `.hatch-bubbles`, a sibling of the
+  sprite inside `.hatch-stage`, for the reason §5 keeps items out of
+  poses: the shake classes transform `.hatch-sprite`, and bubbles drawn
+  into a frame would shake with the shell instead of rising past it —
+  besides sitting frozen for the 3–4s a frame is on screen. The layer
+  paints above the sprite (bubbles pass in front of the lid) but below
+  `.hatch-dark`, so nothing shows during the dark beat. Each bubble is
+  sized from the sprite's *rendered* width — `16 × (spriteWidth / 128)` —
+  so a bubble pixel matches a shell pixel at any stage size; a fixed 16px
+  renders visibly finer than the art it sits next to.
+
+  Rates follow the beats: one every 700ms from the first crack, 430ms
+  while the shell strains open, then settling to 1000ms after the reveal.
+  `bubbles: true` is opt-in per species — T-Rex and dragon hatch on a
+  dirt nest and a bed of coals, where rising bubbles would be nonsense.
+
+  `reference/hippocampus-egg-reference-4x.png` holds all four frames at
+  4× (2048×512). Unlike
+  dragon's hatch reference it sits on flat `#FF00FF` rather than a dark
+  backdrop, so it doubles as a demonstration of the background the next
+  generation must produce.
+- ⬜ Unicorn, pegasus, wolf — no hatch art yet; picking these species
+  still skips straight to instant pet creation. Remaining work is
   art-only (four frames each), no further code changes needed beyond
   their `HATCH_SEQUENCES` entry.
+
+#### Hippocampus hatch sequence (planned)
+
+A seahorse-dragon shouldn't crack out of a bird's egg, so the hippocampus
+sequence swaps the shell for a **clam/oyster resting on the seabed**,
+the same way dragon swapped the dirt nest for hot coals — the beat
+structure, timing, shake classes, and frame *keys* are unchanged, only
+what's drawn inside them and what the captions say.
+
+**Beat → frame mapping.** Three story beats over four frames; the middle
+beat gets two frames because "it's opening" is the part that needs to
+read as motion in a slideshow of stills:
+
+| Key | File | Beat | What's drawn | Shake |
+|---|---|---|---|---|
+| `egg` | `hippocampus-egg.png` | "it's a clam" | Clam sealed shut, ridged shell, sitting in a low mound of sand | none → `shake-light` |
+| `crack1` | `hippocampus-egg-crack1.png` | "it's opening" (1) | Shell parted a sliver; a thin flat band of glow and 2–3 bubbles escaping the gap | `shake-light` |
+| `crack2` | `hippocampus-egg-crack2.png` | "it's opening" (2) | Shell half open, hinged back ~45°; nacre interior visible; two eyes and the snout tip peeking over the lower lip | `shake-medium` |
+| `hatch` | `hippocampus-hatch.png` | "a baby hippocampus!" | Shell wide open, baby sitting up in the lower valve — the direct analogue of `dragon-hatch.png`'s hatchling-in-eggshell | `shake-big` → still |
+
+Keep the `-egg` filenames even though nothing is an egg. The names track
+the *slot* (they're what every other species uses, and the `frames` keys
+in `HATCH_SEQUENCES` are `egg`/`crack1`/`crack2`/`hatch` regardless), and
+the path values are free-form strings, so this is a naming-consistency
+call rather than a load-bearing one.
+
+**Registration — the one real trap here.** The other two species' first
+three frames are a tall egg that fills the canvas by height (rows 13–116).
+A closed clam is wide and low, so it can't be height-filled without
+becoming a beachball. Register it like the curled `sleep` poses instead:
+
+- Fix the **shell width** once at ~103px (≈81% width fill, the number
+  `hippocampus-sleep.png` already landed on) and hold that width across
+  all four frames. Register on the *shell's* bounding box, not the
+  composite — if the frames are each fit to the canvas independently, the
+  shell visibly grows as the baby adds height, and the sequence reads as
+  a zoom instead of an opening.
+- Bottom row **116** on every frame, matching the four existing
+  hippocampus poses (per the dragon precedent, an egg set only has to
+  share a ground line with its own species).
+- Total height grows frame to frame as the lid swings back, capped at top
+  row **13** on `hatch` so the tallest frame still fits the shared
+  104px band. Closed shell + sand ≈ 45px tall; budget the rest for the
+  lid and the baby.
+
+**Palette.** The creature stays on the locked 10-colour
+`reference/hippocampus-palette.txt` — the baby has to match
+`hippocampus.png` because the pet screen cuts straight to that idle
+sprite seconds later. The shell and sand don't exist on that ramp (it's
+entirely teal/aqua plus near-whites), so they get a sub-ramp layered on
+top exactly as dragon's coals did:
+`reference/hippocampus-hatch-shell-palette.txt`/`.png`, 7 entries.
+
+The shell is **grey-blue outside, rose-pearl inside** — mussel rather
+than oyster. That split is deliberate and load-bearing, not decoration:
+the cool exterior gives the shell its own identity against a teal
+creature, while the warm interior is what the baby is actually seen
+against in the reveal frame.
+
+| Hex | L\* | C\* | h | Role |
+|---|---|---|---|---|
+| `#4c5566` | 36.0 | 11.0 | 274 | Shell ridge shadow (exterior darkest) |
+| `#88674b` | 46.2 | 22.9 | 66 | Sand shadow |
+| `#707f91` | 52.6 | 11.6 | 263 | Shell exterior mid |
+| `#b4915c` | 62.3 | 33.6 | 79 | Sand light |
+| `#99a1b1` | 66.1 | 9.3 | 273 | Shell exterior light / rim |
+| `#da9690` | 68.6 | 28.2 | 29 | Nacre shadow (inner rim) |
+| `#f9cbc4` | 85.4 | 18.0 | 32 | Nacre lit (interior surface) |
+
+Plus two **reused** locked entries rather than new ones: `#fbfcfb` as the
+pearl highlight and `#103133` as the outline for shell and sand both, so
+the whole frame keeps the species' single hue-shifted outline.
+
+These values were picked against the quantizer's actual behaviour, not by
+eye. Cleanup step 5 snaps every pixel to its nearest palette entry by RGB
+distance, so what matters is the *minimum distance in the combined
+17-colour palette* — two entries at distance d put a decision boundary at
+d/2, and source pixels near that boundary flip between them, which is
+what speckle is. The shipped benchmark is dragon's coal ramp at 63.4;
+this ramp holds **59.7**, its tightest pair being the shell rim
+`#99a1b1` against the locked light teal `#8fd1d3`. Four things shaped it:
+
+- **No second near-white.** A pale nacre highlight is the natural choice
+  and it is a trap: at L\* ≈ 90 it lands ~45 from the locked
+  `#eef6f5`/`#f5fbf9`/`#fbfcfb` cluster, under half the working spacing,
+  reproducing dragon's speckle exactly with warm and cool whites
+  alternating pixel to pixel. Reusing `#fbfcfb` removes the failure mode
+  instead of tuning around it.
+- **The interior must out-light the baby.** Nacre lit sits at L\* 85.4
+  against the baby's light teal at 79.7 and body mid at 73.0, so the
+  hatchling reads as a darker shape on a bright ground. An earlier
+  candidate at L\* 73.6 was almost exactly the body mid's lightness — the
+  silhouette would have depended on hue alone and gone muddy at 128px,
+  and worse in greyscale or for a colourblind kid.
+- **A cool exterior costs separation, and 59.7 is the ceiling.** A
+  rose-grey exterior scored 64.1; moving the shell to the cool half of
+  the wheel gives up ~5 because three low-chroma blue-greys have to
+  thread between the locked ramp's dark blue-teal (`#0f445c`, L\* 26.8)
+  and its light teals (L\* 73–80). Below ~L\* 34 the ridge shadow closes
+  on `#0f445c`; above ~L\* 68 the rim closes on `#8fd1d3`. L\* 36/53/66
+  is roughly the widest spacing that fits, and compressing to two
+  exterior values instead of three does not help — it just moves the
+  collision. 59.7 still leaves ~4× the per-channel noise the box-filter
+  downsample produces in flat regions, and the one tight pair never forms
+  a soft boundary in the art: the baby always carries its `#103133`
+  outline between its body and the shell rim, so there is no gradient
+  across that edge for the quantizer to flicker along.
+- **Don't let the optimizer make it grey.** Left free, the search drove
+  the exterior to C\* 4–5, which maximizes distance but reads as neutral
+  grey with no blue in it at all. The values above hold a C\* ≥ 9 floor
+  so the blue is actually visible; that floor is what pulled the minimum
+  from 66.2 down to 59.7. Similarly, the hue is pinned near 265–275: left
+  looser it drifted to ~285, which is periwinkle rather than grey-blue.
+
+Everything else stays on-ramp: build the glow leaking from the gap out of
+the locked `#c6eee8`/`#a4e4de` as flat bands, never a gradient, and the
+bubbles from `#fbfcfb` and `#c6eee8`.
+
+One aesthetic note the numbers don't cover: hold the interior's chroma at
+C\* ≤ 28 (dusty rose, not candy pink). Unicorn's locked ramp is 20 shades
+of saturated pink, and a high-chroma interior would read as unicorn parts
+rather than shell.
+
+**Generation.** One 4-panel sheet in a single call, as dragon did — four
+cells held registration fine where eight drifted. Attach both
+`reference/hippocampus-reference-4x.png` (so the baby reads as the same
+character) and the two palette PNGs. Ask for: flat cel-shaded pixel art,
+no anti-aliasing, hue-shifted dark-teal outline, flat `#FF00FF`
+background, no props/grass/shadow beyond the sand the clam sits in, and
+the same shell size in all four cells. Baby proportions are newborn —
+bigger head, shorter snout, stubbier fins, tail curled in the shell — and
+facing the same 3/4-left direction as `hippocampus.png` so the cut to the
+pet screen isn't a flip.
+
+**Cleanup.** Standard pipeline, with the one landmine this species has
+already hit once: **key magenta to alpha *before* cropping**, or the
+margin inside the crop box quantizes into a visible rectangle (see
+`hippocampus-sad.png` above). Then quantize onto locked ramp + shell
+sub-ramp, ghost-overlay each frame against the previous to confirm the
+shell hasn't moved or resized, and save
+`reference/hippocampus-egg-reference-4x.png` with all four at 4×.
+
+**Captions — one line, already wired.** Only the opening caption names
+the container (`"What's this? A " + label + " egg..."`); every later beat
+is either container-neutral ("Something is happening!") or says "the baby
+`<label>`", all of which are true of an oyster. So the sequence needs a
+single override, not a caption system: `startHatchSequence` now reads an
+optional `intro` string off the `HATCH_SEQUENCES` entry and falls back to
+the egg wording when it's absent, leaving T-Rex and dragon untouched.
+Hippocampus's entry sets:
+
+> `intro: 'Look, a giant oyster. I wonder what’s inside?'`
+
+(Typographic apostrophe, as the existing captions use — a straight one
+would close the single-quoted string.)
+
+That is the whole code delta — with it in place, wiring the art is still
+the promised one-entry registration. The synthesized `playCrackSound()`
+noise burst reads fine as shell-on-shell knock and stays as-is.
 
 ### Species selection
 Species is picked once, at first launch, and then locked for the life of
