@@ -2012,9 +2012,13 @@ and falls through to the app's own offline/localStorage handling)
 regardless of what the service worker has cached.
 
 Icons (`assets/icon-192.png`, `assets/icon-512.png`,
-`assets/apple-touch-icon.png`) are a placeholder T-Rex-on-background
-composite, generated rather than hand-drawn; swap them for real app art
-whenever that's ready — nothing else references the source images.
+`assets/apple-touch-icon.png`) are the CRITTERIA egg badge, cropped from
+its source art with the outer black corners flood-filled transparent
+(kept transparent for the two manifest icons; flattened onto
+`background_color` for `apple-touch-icon.png` since iOS renders
+transparency as black). Not full-bleed maskable art, so the manifest
+icons are declared `purpose: "any"` rather than `"any maskable"` — a
+shape crop would clip the badge's rounded corners.
 
 Cache name constants (`CACHE_NAME`, `ASSET_CACHE_NAME` in `sw.js`) are
 versioned by hand; bump them whenever shell files change so returning
