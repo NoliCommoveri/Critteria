@@ -8,5 +8,5 @@ binding = "ASSETS"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "critteria"
-database_id = "12fe0a08-9d2b-4a68-bde5-a8729de8d916"
+database_name = "critteriamulti"
+database_id = "4631766e-d5c9-4376-a327-bbdda88419cc"

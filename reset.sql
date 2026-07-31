@@ -8,8 +8,8 @@
 -- migration instead; see the pragma notes under §9 Step 5 for why
 -- rebuilding a table under D1 is awkward.
 --
--- Apply with: npx wrangler d1 execute critteria --remote --file=./reset.sql
---             npx wrangler d1 execute critteria --remote --file=./schema.sql
+-- Apply with: npx wrangler d1 execute critteriamulti --remote --file=./reset.sql
+--             npx wrangler d1 execute critteriamulti --remote --file=./schema.sql
 
 DROP TABLE IF EXISTS pet_current_location;
 DROP TABLE IF EXISTS pet_equipped_items;

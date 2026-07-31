@@ -1,5 +1,5 @@
 -- Critteria backend schema (see SPEC.md §3, §9).
--- Apply with: npx wrangler d1 execute critteria --remote --file=./schema.sql
+-- Apply with: npx wrangler d1 execute critteriamulti --remote --file=./schema.sql
 
 PRAGMA foreign_keys = ON;
 
@@ -49,8 +49,7 @@ CREATE TABLE pairing_codes (
 -- A kid may own several pets, but only as many as they've earned through
 -- good-care days (see care_days below). kid_id is deliberately NOT UNIQUE:
 -- the cap is enforced in POST /api/pets against the earned slot count, not
--- by the schema. An existing deployment gets here via
--- migrations/001-multi-pet-care-days.sql.
+-- by the schema.
 CREATE TABLE pets (
   id            TEXT PRIMARY KEY,
   kid_id        TEXT NOT NULL REFERENCES kids(id),

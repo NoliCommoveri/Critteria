@@ -1423,12 +1423,21 @@ and can be ignored (or GH Pages disabled outright in repo Settings).
 
 ### Step 4 — Create the D1 database (done)
 
-Workers & Pages → D1 → **Create database** → name it `critteria`.
+Workers & Pages → D1 → **Create database** → name it `critteriamulti`.
 
-CLI equivalent: `npx wrangler d1 create critteria`
+CLI equivalent: `npx wrangler d1 create critteriamulti`
 
 *Checkpoint:* the database appears in the D1 list with a database ID.
 Copy the ID for Step 6.
+
+**Pick a name that can't be confused with another project's.** The
+account also holds `star-homeschool`, whose schema defines tables called
+`families`, `devices` and `pairing_codes` — the same names Critteria
+uses, because §7's auth model was adapted from it. A database named one
+character away from that one means a mistyped `wrangler d1 execute`
+would run Critteria's DROPs against real Star data and look plausible
+doing it. An earlier attempt at this rebuild was named `starhomeschool`
+and was thrown away for exactly that reason.
 
 ### Step 5 — Apply the schema (done)
 
@@ -1436,7 +1445,7 @@ Commit the `CREATE TABLE` statements below to the repo as `schema.sql`,
 then apply them to the remote D1:
 
 ```
-npx wrangler d1 execute critteria --remote --file=./schema.sql
+npx wrangler d1 execute critteriamulti --remote --file=./schema.sql
 ```
 
 **Don't paste `schema.sql` into the D1 Console tab in the dashboard.** It
@@ -1498,7 +1507,7 @@ table rebuild against `--local` before pointing it at `--remote`.**
 
 ```sql
 -- Critteria backend schema (see SPEC.md §3, §9).
--- Apply with: npx wrangler d1 execute critteria --remote --file=./schema.sql
+-- Apply with: npx wrangler d1 execute critteriamulti --remote --file=./schema.sql
 
 PRAGMA foreign_keys = ON;
 
@@ -1642,10 +1651,10 @@ to write a migration for data that doesn't exist:
 
 ```
 # Rehearse locally first, always.
-npx wrangler d1 execute critteria --local  --file=./reset.sql
-npx wrangler d1 execute critteria --local  --file=./schema.sql
-npx wrangler d1 execute critteria --remote --file=./reset.sql
-npx wrangler d1 execute critteria --remote --file=./schema.sql
+npx wrangler d1 execute critteriamulti --local  --file=./reset.sql
+npx wrangler d1 execute critteriamulti --local  --file=./schema.sql
+npx wrangler d1 execute critteriamulti --remote --file=./reset.sql
+npx wrangler d1 execute critteriamulti --remote --file=./schema.sql
 ```
 
 `reset.sql` drops in reverse-dependency order (children before parents,
@@ -1685,7 +1694,7 @@ binding = "ASSETS"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "critteria"
+database_name = "critteriamulti"
 database_id = "<your D1 database's ID from Step 4>"
 ```
 
