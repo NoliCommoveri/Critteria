@@ -195,6 +195,35 @@
     filter: grayscale(35%) brightness(0.95) drop-shadow(0 6px 6px rgba(0,0,0,0.12));
   }
 
+  /* Travelling item for the feed/play/clean actions (SPEC.md "Action
+     choreography"). Landing spot is a generic front-of-pet anchor (left
+     side, mid-height, clear of the body), not yet the per-species
+     mouth/body anchor the spec describes — that needs anchor points tuned
+     per species. The motion itself (slow approach from the lower-left
+     corner, shrinking in from an oversized entry down to landing scale,
+     hold, then fade) doesn't depend on that or on the eat/play/bath pose
+     art, so it runs now against whatever pose is showing. */
+  .item-sprite {
+    position: absolute;
+    left: 22%;
+    top: 52%;
+    width: 30%;
+    max-width: 64px;
+    opacity: 0;
+    pointer-events: none;
+    image-rendering: pixelated;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  .item-sprite.show {
+    animation: item-approach 1.8s ease-out forwards;
+  }
+  @keyframes item-approach {
+    0%   { opacity: 0; transform: translate(calc(-50% - 70px), calc(-50% + 90px)) scale(1.8); }
+    40%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    78%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    100% { opacity: 0; transform: translate(-50%, -50%) scale(0.85); }
+  }
+
   .overlay-dirt {
     position: absolute;
     width: 20px;
@@ -613,6 +642,7 @@
 
     <div class="stage" id="stage">
       <img id="pet-sprite" class="pet-visual" alt="">
+      <img id="item-sprite" class="item-sprite" alt="">
 
       <div class="overlay-dirt" style="left: 34%; top: 76%;"></div>
       <div class="overlay-dirt" style="left: 58%; top: 80%;"></div>
@@ -885,6 +915,52 @@
     while (name && !set[name]) name = POSE_FALLBACK[name];
     if (!name) return { pose: 'idle', src: set.idle || null, exact: false };
     return { pose: name, src: set[name], exact: name === wanted };
+  }
+
+  // --- Item art --------------------------------------------------------
+  //
+  // Feed/toy items are species-specific — a T-Rex gnaws a drumstick, a
+  // hippocampus nibbles seaweed — so each species gets its own pair of
+  // 64x64 items per action (two options, picked at random, for variety).
+  // Clean is the one action that stays a single shared sprite across all
+  // species: there's nothing species-flavored about soap and bubbles.
+  // See SPEC.md "Action choreography".
+  //
+  // Wolf has no item art yet (species is currently unused), so it falls
+  // back to no travelling item rather than a broken image.
+  var SPECIES_ITEMS = {
+    trex: {
+      feed: ['assets/trex-food-drumstick.png', 'assets/trex-food-ribs.png'],
+      toy: ['assets/trex-toy-bone.png', 'assets/trex-toy-rock.png']
+    },
+    hippocampus: {
+      feed: ['assets/hippocampus-food-seaweed.png', 'assets/hippocampus-food-seagrape.png'],
+      toy: ['assets/hippocampus-toy-starfish.png', 'assets/hippocampus-toy-sponge.png']
+    },
+    pegasus: {
+      feed: ['assets/pegasus-food-cabbage.png', 'assets/pegasus-food-apple.png'],
+      toy: ['assets/pegasus-toy-kite.png', 'assets/pegasus-toy-cloud.png']
+    },
+    unicorn: {
+      feed: ['assets/unicorn-food-hay.png', 'assets/unicorn-food-apple.png'],
+      toy: ['assets/unicorn-toy-ribbon.png', 'assets/unicorn-toy-discoball.png']
+    },
+    dragon: {
+      feed: ['assets/dragon-food-meat.png', 'assets/dragon-food-fish.png'],
+      toy: ['assets/dragon-toy-windupbee.png', 'assets/dragon-toy-flame.png']
+    },
+    wolf: { feed: [], toy: [] }
+  };
+
+  var CLEAN_ITEM = 'assets/bubble-md.png';
+
+  function pickItem(species, action) {
+    if (action === 'clean') return CLEAN_ITEM;
+    var key = action === 'feed' ? 'feed' : action === 'play' ? 'toy' : null;
+    if (!key) return null;
+    var list = (SPECIES_ITEMS[species] || {})[key];
+    if (!list || !list.length) return null;
+    return list[Math.floor(Math.random() * list.length)];
   }
 
   // --- Color variants ------------------------------------------------------
@@ -1198,6 +1274,7 @@
 
   var stage = document.getElementById('stage');
   var petSprite = document.getElementById('pet-sprite');
+  var itemSprite = document.getElementById('item-sprite');
   var statusText = document.getElementById('status-text');
   var nameDisplay = document.getElementById('pet-name-display');
   var btnFeed = document.getElementById('btn-feed');
@@ -1292,11 +1369,20 @@
     });
   }
 
-  function showActionPose(pose) {
+  function showActionPose(pose, itemSrc) {
     actionPose = pose;
+    itemSprite.classList.remove('show');
+    if (itemSrc) {
+      itemSprite.src = itemSrc;
+      // Force a reflow so re-adding 'show' restarts the CSS animation even
+      // when the same action is retapped before the previous item finished.
+      void itemSprite.offsetWidth;
+      itemSprite.classList.add('show');
+    }
     clearTimeout(actionPoseTimer);
     actionPoseTimer = setTimeout(function () {
       actionPose = null;
+      itemSprite.classList.remove('show');
       render();
     }, ACTION_POSE_MS);
   }
@@ -1402,7 +1488,7 @@
       }
       applyDecay(state);
       fn();
-      if (ACTION_POSES[action]) showActionPose(ACTION_POSES[action]);
+      if (ACTION_POSES[action]) showActionPose(ACTION_POSES[action], pickItem(state.species, action));
       saveState();
       render();
       flash();
@@ -1414,7 +1500,7 @@
   // action.js runs the same decay/effect math as the local fn() above, so
   // the two paths should feel identical to a kid tapping the buttons).
   async function syncAction(serverAction) {
-    if (ACTION_POSES[serverAction]) showActionPose(ACTION_POSES[serverAction]);
+    if (ACTION_POSES[serverAction]) showActionPose(ACTION_POSES[serverAction], pickItem(state.species, serverAction));
     flash();
     try {
       var data = await api('/api/pets/' + device.petId + '/action', {
@@ -1464,6 +1550,7 @@
     state.sleeping = !state.sleeping;
     actionPose = null;
     clearTimeout(actionPoseTimer);
+    itemSprite.classList.remove('show');
   }));
 
   renameToggle.addEventListener('click', function () {

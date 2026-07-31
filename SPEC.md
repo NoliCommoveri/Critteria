@@ -432,9 +432,9 @@ actually has. Two tiers:
 
 Required poses persist for as long as the mood holds. Action poses are
 transient — they hold `ACTION_POSE_MS` (1.8s) and then hand back to the mood
-pose. Eight poses × six species = 48 creature sprites, plus 3 shared item
-sprites (below); that is the real art budget for this feature, and it is the
-reason for the tiering.
+pose. Eight poses × six species = 48 creature sprites, plus the item sprites
+(below); that is the real art budget for this feature, and it is the reason
+for the tiering.
 
 ### Action choreography
 
@@ -467,20 +467,41 @@ Reaction loops, per action:
 - **Play → bounce.** Same reasoning as the shake: an existing vertical
   transform on the `play` sprite, no second frame.
 
-Item sprites are **64×64, on the shared palette, and species-independent** —
-one apple/food item, one soap-and-bubbles, one ball, reused across all six
-species. Three sprites total, no per-species multiplication. (Half the
-creature canvas, scaled with it when the canvas rule changed.)
+Item sprites are **64×64** (half the creature canvas, scaled with it when the
+canvas rule changed) but, unlike the pose art, they're **species-specific for
+feed and play** — a T-Rex gnaws a drumstick, a hippocampus nibbles seaweed, a
+pegasus crunches a cabbage. A single shared apple/ball read as generic once
+real per-species pose art existed next to it, so feed and toy items were
+redone to match: each species gets two feed items and two toy items (picked
+at random per tap, for variety, all drawn from the art already produced),
+named `assets/<species>-food-<name>.png` / `assets/<species>-toy-<name>.png`.
+`SPECIES_ITEMS` in `index.html` holds the mapping; a species with no entries
+(currently wolf, which is unused) simply gets no travelling item rather than
+a broken image.
+
+**Clean stays shared.** There's nothing species-flavored about soap and
+bubbles, so every species reuses one sprite — currently `assets/bubble-md.png`
+— rather than multiplying art for a wash effect that looks the same on
+everyone.
 
 Items must be **separate files**, never drawn into a pose. The first
 generated sheet baked food into four of its eight cells, which breaks the
-approach phase entirely — there is nothing left to fly in.
+approach phase entirely — there is nothing left to fly in. Per-species items
+are now generated four-to-a-sheet (feed ×2, toy ×2) on a magenta chroma-key
+background, then split, despilled to transparency, trimmed, and downscaled
+to 64×64 before they reach `assets/` — each item its own file, as required.
 
 Where an item lands is per-species, since a hippocampus's mouth is nowhere
 near a T-Rex's: extend the accessory anchor config with an `item` slot, so
 the food arrives at the mouth and the suds land over the body. Suds may also
 sit as a persistent overlay for the reaction phase rather than vanishing on
-contact.
+contact. **Partially built** — `index.html` now animates the item in from
+the lower-left corner, oversized and fading in, shrinking down to landing
+scale as it settles at a generic front-of-pet anchor (left side, mid-height,
+clear of the body) rather than overlapping it, holds, then fades out. That
+anchor is still one fixed spot for every species, not the per-species
+mouth/body point this section describes — real anchor tuning is the
+remaining work here.
 
 Deliberately out of scope for now: Sleep gets no travelling item (nothing is
 being applied to the pet — the pet changes state), and no action gets a
@@ -1127,10 +1148,14 @@ enforces the once-a-day rate limit via `helper_action_usage`
    wired into `SPECIES_POSES` and the picker; palette-remap color variants
    exist for five of the six (all but wolf). Phoenix/griffin/blob are
    dropped from the picker, `SPECIES_POSES`, and (phoenix/griffin) the
-   asset files. Remaining: draw the four action poses (eat, eat-chew,
-   play, bath) per species and the three shared item sprites (apple, soap,
-   ball); build the travelling-item choreography and the shake/bounce CSS
-   loops (no art dependency for the choreography itself).
+   asset files. Per-species feed/toy items (two each) are drawn and wired
+   into `SPECIES_ITEMS` for five of the six species (all but wolf, which is
+   unused); clean uses one shared bubble sprite across all species. The item
+   approach (lower-left entry, shrinking to landing scale at a fixed
+   front-of-pet anchor) is built and needs no further art — remaining there
+   is just tuning that anchor per species. Still missing: the four action
+   poses (eat, eat-chew, play, bath) per species, and the reaction loops
+   (shake/bounce CSS, plus the eat/eat-chew alternation) that need them.
 3. **Backend + Social v1 (in progress)**: Cloudflare Workers with
    `[assets]` binding + D1, deployed and live at `critteria.immotus.app`
    (§9 Steps 1–8 done). `SIGNUP_SECRET`-gated family creation is verified
