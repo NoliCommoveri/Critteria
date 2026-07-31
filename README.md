@@ -9,8 +9,14 @@ friends), built as a web app / PWA and hosted at
 ```
 index.html    Single-file PWA. Loads pixel-art sprites from assets/, syncs
               pet state to the API once a device joins a family (SPEC.md §9
-              Step 10).
-assets/       Species sprites, palettes, and generation reference art.
+              Step 10), and registers sw.js for install/offline.
+manifest.webmanifest
+              Web app manifest — name, icons, standalone display (SPEC.md
+              §9 "PWA install").
+sw.js         Service worker: network-first app shell, cache-first
+              assets/, never intercepts /api/ (SPEC.md §9 "PWA install").
+assets/       Species sprites, palettes, generation reference art, and the
+              app icons (icon-192.png, icon-512.png, apple-touch-icon.png).
 SPEC.md       Full design spec — read this before making changes.
 schema.sql    D1 schema — full CREATE TABLE inline in SPEC.md §9 Step 5.
 reset.sql     Drops every table so schema.sql can be re-applied. Only
@@ -83,3 +89,9 @@ live in this repo's `main` history.
   sibling-visit view with helper actions. A device with no family token
   still plays fully offline from `localStorage`, unchanged from the
   original prototype.
+- **PWA install**: `manifest.webmanifest` + `sw.js` are wired up, so Silk
+  (or any Chromium-based browser) can install Critteria to the home
+  screen with its own icon, standalone window, and no browser chrome. The
+  service worker caches the app shell (network-first) and `assets/`
+  sprites (cache-first) so a previously-opened pet keeps rendering
+  offline; it never touches `/api/*`, so sync behavior is unchanged.
