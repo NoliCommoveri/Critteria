@@ -10,7 +10,24 @@
 // per-family config, and if it ever needs to be local time the fix is a
 // families.tz column, not a schema change here.
 
-export const GOOD_CARE_AVG = 70;
+// Sits deliberately between the two mood thresholds in getMood(): above
+// 'neutral', below the 90 that reads as 'happy'. That gap is the whole
+// tuning problem, because feed/play/clean can each drive their own stat to
+// 100 on demand while nothing but sleep raises energy:
+//
+//   * at 70 the check is vacuous — 100/100/0/100 still averages 75, so a
+//     kid banks a day by mashing three buttons at an exhausted pet.
+//   * at 90 the pet needs energy >= 60, i.e. a deliberate nap on almost
+//     any day it's been awake more than five hours. Reliable enough to
+//     stall the unlock entirely for a kid who hasn't found the Sleep
+//     button.
+//   * at 80 it needs energy >= 20, so button-mashing alone stops working
+//     once a pet has been up ~15 hours and the day has to include a nap
+//     (or an overnight sleep) — real care, still forgiving.
+//
+// If getMood()'s thresholds move again, re-run that arithmetic: this
+// number governs progression, not just which sprite is showing.
+export const GOOD_CARE_AVG = 80;
 
 // Cumulative, NOT a streak: a missed day fails to advance the count but
 // never resets it. Chosen deliberately over a strict streak — with four

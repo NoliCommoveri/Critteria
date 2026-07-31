@@ -433,7 +433,7 @@ actually has. Two tiers:
 | Pose | Trigger | Depicts | Tier |
 |---|---|---|---|
 | `idle` | neutral mood | Standing, calm, eyes open, ¾ view | **required** |
-| `happy` | mood avg ≥ 70 | Bright-eyed, open mouth, lifted posture | **required** |
+| `happy` | mood avg ≥ 90 | Bright-eyed, open mouth, lifted posture | **required** |
 | `sad` | any stat < 20 | Head/ears down, drooped tail, downturned mouth | **required** |
 | `sleep` | sleep toggled on | **Lying down, eyes closed** — curled, head resting | **required** |
 | `eat` | Feed tapped | Head toward food, mouth open, jaw down | action |
@@ -443,9 +443,9 @@ actually has. Two tiers:
 
 Required poses persist for as long as the mood holds. Action poses are
 transient — they hold `ACTION_POSE_MS` (1.8s) and then hand back to the mood
-pose. Eight poses × six species = 48 creature sprites, plus 3 shared item
-sprites (below); that is the real art budget for this feature, and it is the
-reason for the tiering.
+pose. Eight poses × six species = 48 creature sprites, plus the item sprites
+(below); that is the real art budget for this feature, and it is the reason
+for the tiering.
 
 ### Action choreography
 
@@ -478,25 +478,79 @@ Reaction loops, per action:
 - **Play → bounce.** Same reasoning as the shake: an existing vertical
   transform on the `play` sprite, no second frame.
 
-Item sprites are **64×64, on the shared palette, and species-independent** —
-one apple/food item, one soap-and-bubbles, one ball, reused across all six
-species. Three sprites total, no per-species multiplication. (Half the
-creature canvas, scaled with it when the canvas rule changed.)
+Item sprites are **64×64** (half the creature canvas, scaled with it when the
+canvas rule changed) but, unlike the pose art, they're **species-specific for
+feed and play** — a T-Rex gnaws a drumstick, a hippocampus nibbles seaweed, a
+pegasus crunches a cabbage. A single shared apple/ball read as generic once
+real per-species pose art existed next to it, so feed and toy items were
+redone to match: each species gets two feed items and two toy items (picked
+at random per tap, for variety, all drawn from the art already produced),
+named `assets/<species>-food-<name>.png` / `assets/<species>-toy-<name>.png`.
+`SPECIES_ITEMS` in `index.html` holds the mapping; a species with no entries
+(currently wolf, which is unused) simply gets no travelling item rather than
+a broken image.
+
+**Clean stays shared, but picks between two items now.** There's nothing
+species-flavored about washing up, so every species reuses the same pair of
+sprites rather than multiplying art for a wash effect that looks the same on
+everyone — but which of the two travels in depends on how dirty the pet
+actually is: `assets/clean-sponge.png` below the cleanliness threshold
+(`CLEAN_ITEM_THRESHOLD = 85` in `index.html`), `assets/clean-brush.png` at or
+above it. `pickItem()` reads `state.cleanliness` at call time, so callers
+have to run it *before* the clean action's effect function resets
+cleanliness to 100 — `doAction()` captures the item choice ahead of `fn()`
+for exactly this reason.
+
+Both were sourced from a glossy, softly-shaded reference image (isometric
+mobile-icon style, smooth gradients, AA edges) — nothing like the flat
+cel-shaded, hard-outlined look every other item on this page uses. A first
+pass that just chroma-keyed/trimmed/downscaled it kept that gradient look
+and read as visibly off-style next to `dragon-food-meat.png` and its
+siblings. Fixed by actually pixelating rather than just downscaling: box-
+downsample to a coarse ~30px native grid (kills the gradient), median-cut
+quantize to ~13 flat colors (bands the shading), scale back up with
+nearest-neighbour (crisp square pixels, no re-blur), hard-threshold alpha
+to a binary silhouette (no soft edge fade), then stamp a 1px hue-shifted
+dark outline on any transparent pixel touching an opaque one — the same
+"dark outline, never pure black" rule pose art uses.
+
+When the sponge is picked (i.e. the pet started below the threshold),
+`spawnWashBubbles()` also fires a one-off burst of bubbles around the pet's
+feet — a deliberate, scoped exception to "no action gets a...particle burst"
+below: soap bubbles read as part of the wash, not as combat feedback, so
+they stay in the calm/cozy register the rule is protecting. They reuse the
+same `BUBBLE_SPRITES` art as the hatch-sequence bubbles (`.wash-bubble` /
+`bubblePop` vs. `.hatch-bubble` / `bubbleRise` in `index.html`), but rise
+only about 60% of the hatch bubbles' full travel before popping — a quick
+scale-up-and-fade — rather than drifting to the top of the stage and fading
+out gradually. The brush gets no burst; it's presented as already-mostly-
+clean upkeep rather than a sudsy wash.
 
 Items must be **separate files**, never drawn into a pose. The first
 generated sheet baked food into four of its eight cells, which breaks the
-approach phase entirely — there is nothing left to fly in.
+approach phase entirely — there is nothing left to fly in. Per-species items
+are now generated four-to-a-sheet (feed ×2, toy ×2) on a magenta chroma-key
+background, then split, despilled to transparency, trimmed, and downscaled
+to 64×64 before they reach `assets/` — each item its own file, as required.
 
 Where an item lands is per-species, since a hippocampus's mouth is nowhere
 near a T-Rex's: extend the accessory anchor config with an `item` slot, so
 the food arrives at the mouth and the suds land over the body. Suds may also
 sit as a persistent overlay for the reaction phase rather than vanishing on
-contact.
+contact. **Partially built** — `index.html` now animates the item in from
+the lower-left corner, oversized and fading in, shrinking down to landing
+scale as it settles at a generic front-of-pet anchor (left side, mid-height,
+clear of the body) rather than overlapping it, holds, then fades out. That
+anchor is still one fixed spot for every species, not the per-species
+mouth/body point this section describes — real anchor tuning is the
+remaining work here.
 
 Deliberately out of scope for now: Sleep gets no travelling item (nothing is
 being applied to the pet — the pet changes state), and no action gets a
-screen-shake, flash, or particle burst. The tone in §1 is calm and cozy;
-these should read as gentle, not as combat feedback.
+screen-shake or flash. The tone in §1 is calm and cozy; these should read as
+gentle, not as combat feedback. (The sponge-wash bubble burst above is the
+one particle-burst exception — see "Clean stays shared" — because it reads
+as suds, not impact.)
 
 ### Fallback chain
 
@@ -1010,7 +1064,16 @@ future change has to respect.
 
 **Earning.** A *good-care day* is banked when a kid performs any care
 action on **their own** pet and leaves it with the four stats averaging
-`GOOD_CARE_AVG` (70) or better. At most one per UTC day, written by
+`GOOD_CARE_AVG` (80) or better. That number sits deliberately between
+`getMood()`'s neutral band and its 90-average "happy", and it is load
+bearing: feed/play/clean each drive their own stat to 100 on demand
+while nothing but sleep raises energy, so at 70 the check is vacuous
+(100/100/0/100 still averages 75) and at 90 it demands a nap on almost
+any day the pet has been awake more than five hours. 80 requires energy
+above 20, which button-mashing alone stops reaching once a pet has been
+up ~15 hours. **If the mood thresholds move again, re-run that
+arithmetic** — see the note above `GOOD_CARE_AVG` in
+`functions/_lib/care.js`. At most one per UTC day, written by
 `POST /api/pets/:id/action` into `care_days`. Helper actions on a
 sibling's pet deliberately never count — the check is the `isOwnPet`
 branch in `action.js`, and dropping it would let a kid farm slots off
@@ -1199,10 +1262,14 @@ enforces the once-a-day rate limit via `helper_action_usage`
    wired into `SPECIES_POSES` and the picker; palette-remap color variants
    exist for five of the six (all but wolf). Phoenix/griffin/blob are
    dropped from the picker, `SPECIES_POSES`, and (phoenix/griffin) the
-   asset files. Remaining: draw the four action poses (eat, eat-chew,
-   play, bath) per species and the three shared item sprites (apple, soap,
-   ball); build the travelling-item choreography and the shake/bounce CSS
-   loops (no art dependency for the choreography itself).
+   asset files. Per-species feed/toy items (two each) are drawn and wired
+   into `SPECIES_ITEMS` for five of the six species (all but wolf, which is
+   unused); clean uses one shared bubble sprite across all species. The item
+   approach (lower-left entry, shrinking to landing scale at a fixed
+   front-of-pet anchor) is built and needs no further art — remaining there
+   is just tuning that anchor per species. Still missing: the four action
+   poses (eat, eat-chew, play, bath) per species, and the reaction loops
+   (shake/bounce CSS, plus the eat/eat-chew alternation) that need them.
 3. **Backend + Social v1 (in progress)**: Cloudflare Workers with
    `[assets]` binding + D1, deployed and live at `critteria.immotus.app`
    (§9 Steps 1–8 done). `SIGNUP_SECRET`-gated family creation is verified

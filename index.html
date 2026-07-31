@@ -254,6 +254,62 @@
     filter: grayscale(35%) brightness(0.95) drop-shadow(0 6px 6px rgba(0,0,0,0.12));
   }
 
+  /* Travelling item for the feed/play/clean actions (SPEC.md "Action
+     choreography"). Landing spot is a generic front-of-pet anchor (left
+     side, mid-height, clear of the body), not yet the per-species
+     mouth/body anchor the spec describes — that needs anchor points tuned
+     per species. The motion itself (slow approach from the lower-left
+     corner, shrinking in from an oversized entry down to landing scale,
+     hold, then fade) doesn't depend on that or on the eat/play/bath pose
+     art, so it runs now against whatever pose is showing. */
+  .item-sprite {
+    position: absolute;
+    left: 22%;
+    top: 52%;
+    width: 30%;
+    max-width: 64px;
+    opacity: 0;
+    pointer-events: none;
+    image-rendering: pixelated;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  .item-sprite.show {
+    animation: item-approach 1.8s ease-out forwards;
+  }
+  @keyframes item-approach {
+    0%   { opacity: 0; transform: translate(calc(-50% - 70px), calc(-50% + 90px)) scale(1.8); }
+    40%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    78%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    100% { opacity: 0; transform: translate(-50%, -50%) scale(0.85); }
+  }
+
+  /* Sponge-wash bubbles: a burst of the same bubble sprites used for the
+     hatch effect (see .hatch-bubble / bubbleRise), but these rise only
+     around the pet's feet and pop partway up instead of drifting all the
+     way to the top of the stage — see spawnWashBubbles(). Own layer so
+     they keep rising independent of the item-sprite/pet-visual animations. */
+  .wash-bubbles {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .wash-bubble {
+    position: absolute;
+    width: var(--bubble-size, 16px);
+    image-rendering: pixelated;
+    opacity: 0;
+    animation: bubblePop var(--bubble-dur, 1.2s) ease-out forwards;
+  }
+  @keyframes bubblePop {
+    0%   { transform: translate(0, 0) scale(0.7); opacity: 0; }
+    18%  { opacity: 0.95; }
+    48%  { opacity: 0.9; transform: translate(var(--bubble-drift, 0px), -38px) scale(0.95); }
+    60%  { transform: translate(var(--bubble-drift, 0px), -47px) scale(1.45); opacity: 0.55; }
+    68%  { transform: translate(var(--bubble-drift, 0px), -47px) scale(1.85); opacity: 0; }
+    100% { transform: translate(var(--bubble-drift, 0px), -47px) scale(1.85); opacity: 0; }
+  }
+
   .overlay-dirt {
     position: absolute;
     width: 20px;
@@ -675,6 +731,8 @@
 
     <div class="stage" id="stage">
       <img id="pet-sprite" class="pet-visual" alt="">
+      <img id="item-sprite" class="item-sprite" alt="">
+      <div class="wash-bubbles" id="wash-bubbles"></div>
 
       <div class="overlay-dirt" style="left: 34%; top: 76%;"></div>
       <div class="overlay-dirt" style="left: 58%; top: 80%;"></div>
@@ -744,7 +802,11 @@
 
   // Mirrors functions/_lib/care.js — the offline path has to agree with the
   // server or a kid's progress would jump when the tablet connects.
-  var GOOD_CARE_AVG = 70;
+  // Sits between getMood()'s 'neutral' and its 90-average 'happy'. See the
+  // long note on GOOD_CARE_AVG in functions/_lib/care.js before changing
+  // it — at 70 the daily check is vacuous, at 90 it needs a nap nearly
+  // every day. Both files have to move together.
+  var GOOD_CARE_AVG = 80;
   var UNLOCK_AT_DAYS = [7, 21];
   var MAX_PETS_PER_KID = UNLOCK_AT_DAYS.length + 1;
 
@@ -967,7 +1029,7 @@
     var min = Math.min(s.hunger, s.happiness, s.energy);
     if (min < 20) return 'sad';
     var avg = (s.hunger + s.happiness + s.energy + s.cleanliness) / 4;
-    if (avg >= 70) return 'happy';
+    if (avg >= 90) return 'happy';
     return 'neutral';
   }
 
@@ -1070,6 +1132,58 @@
     while (name && !set[name]) name = POSE_FALLBACK[name];
     if (!name) return { pose: 'idle', src: set.idle || null, exact: false };
     return { pose: name, src: set[name], exact: name === wanted };
+  }
+
+  // --- Item art --------------------------------------------------------
+  //
+  // Feed/toy items are species-specific — a T-Rex gnaws a drumstick, a
+  // hippocampus nibbles seaweed — so each species gets its own pair of
+  // 64x64 items per action (two options, picked at random, for variety).
+  // Clean is the one action that stays shared across all species: there's
+  // nothing species-flavored about washing up. It still picks between two
+  // shared items rather than one, though — sponge below the cleanliness
+  // threshold, brush at/above it — so the tool a kid sees matches how
+  // dirty the pet actually is. See SPEC.md "Action choreography".
+  //
+  // Wolf has no item art yet (species is currently unused), so it falls
+  // back to no travelling item rather than a broken image.
+  var SPECIES_ITEMS = {
+    trex: {
+      feed: ['assets/trex-food-drumstick.png', 'assets/trex-food-ribs.png'],
+      toy: ['assets/trex-toy-bone.png', 'assets/trex-toy-rock.png']
+    },
+    hippocampus: {
+      feed: ['assets/hippocampus-food-seaweed.png', 'assets/hippocampus-food-seagrape.png'],
+      toy: ['assets/hippocampus-toy-starfish.png', 'assets/hippocampus-toy-sponge.png']
+    },
+    pegasus: {
+      feed: ['assets/pegasus-food-cabbage.png', 'assets/pegasus-food-apple.png'],
+      toy: ['assets/pegasus-toy-kite.png', 'assets/pegasus-toy-cloud.png']
+    },
+    unicorn: {
+      feed: ['assets/unicorn-food-hay.png', 'assets/unicorn-food-apple.png'],
+      toy: ['assets/unicorn-toy-ribbon.png', 'assets/unicorn-toy-discoball.png']
+    },
+    dragon: {
+      feed: ['assets/dragon-food-meat.png', 'assets/dragon-food-fish.png'],
+      toy: ['assets/dragon-toy-windupbee.png', 'assets/dragon-toy-flame.png']
+    },
+    wolf: { feed: [], toy: [] }
+  };
+
+  var CLEAN_ITEM_SPONGE = 'assets/clean-sponge.png';
+  var CLEAN_ITEM_BRUSH = 'assets/clean-brush.png';
+  var CLEAN_ITEM_THRESHOLD = 85;
+
+  function pickItem(species, action) {
+    if (action === 'clean') {
+      return state.cleanliness >= CLEAN_ITEM_THRESHOLD ? CLEAN_ITEM_BRUSH : CLEAN_ITEM_SPONGE;
+    }
+    var key = action === 'feed' ? 'feed' : action === 'play' ? 'toy' : null;
+    if (!key) return null;
+    var list = (SPECIES_ITEMS[species] || {})[key];
+    if (!list || !list.length) return null;
+    return list[Math.floor(Math.random() * list.length)];
   }
 
   // --- Color variants ------------------------------------------------------
@@ -1383,6 +1497,8 @@
 
   var stage = document.getElementById('stage');
   var petSprite = document.getElementById('pet-sprite');
+  var itemSprite = document.getElementById('item-sprite');
+  var washBubbles = document.getElementById('wash-bubbles');
   var statusText = document.getElementById('status-text');
   var nameDisplay = document.getElementById('pet-name-display');
   var btnFeed = document.getElementById('btn-feed');
@@ -1479,11 +1595,20 @@
     });
   }
 
-  function showActionPose(pose) {
+  function showActionPose(pose, itemSrc) {
     actionPose = pose;
+    itemSprite.classList.remove('show');
+    if (itemSrc) {
+      itemSprite.src = itemSrc;
+      // Force a reflow so re-adding 'show' restarts the CSS animation even
+      // when the same action is retapped before the previous item finished.
+      void itemSprite.offsetWidth;
+      itemSprite.classList.add('show');
+    }
     clearTimeout(actionPoseTimer);
     actionPoseTimer = setTimeout(function () {
       actionPose = null;
+      itemSprite.classList.remove('show');
       render();
     }, ACTION_POSE_MS);
   }
@@ -1505,10 +1630,15 @@
     activeIndex = index;
     state = roster[activeIndex];
     saveState();
-    // Nothing carries over between pets: an in-flight bath pose or a half
-    // open rename form belongs to the pet that was on screen a moment ago.
+    // Nothing carries over between pets: an in-flight bath pose, its
+    // travelling item sprite and bubbles, or a half-open rename form all
+    // belong to the pet that was on screen a moment ago. Clearing the
+    // timer alone would strand the item sprite mid-flight, since it's the
+    // timer's callback that normally hides it again.
     actionPose = null;
     clearTimeout(actionPoseTimer);
+    itemSprite.classList.remove('show');
+    clearWashBubbles();
     renameForm.classList.remove('visible');
     render();
     if (state.id && device.token) {
@@ -1708,12 +1838,19 @@
         return;
       }
       applyDecay(state);
+      // pickItem() reads state.cleanliness to choose sponge vs. brush, so it
+      // has to run before fn() — for 'clean', fn() is what sets cleanliness
+      // back to 100.
+      var itemSrc = ACTION_POSES[action] ? pickItem(state.species, action) : null;
       fn();
       // Offline mirror of the server's care-day write in action.js: caring
       // for a pet well enough banks today toward the next unlock, whether
       // or not this tablet has ever seen the backend.
       recordLocalCareDay();
-      if (ACTION_POSES[action]) showActionPose(ACTION_POSES[action]);
+      if (ACTION_POSES[action]) {
+        showActionPose(ACTION_POSES[action], itemSrc);
+        if (action === 'clean' && itemSrc === CLEAN_ITEM_SPONGE) spawnWashBubbles();
+      }
       saveState();
       render();
       flash();
@@ -1725,7 +1862,11 @@
   // action.js runs the same decay/effect math as the local fn() above, so
   // the two paths should feel identical to a kid tapping the buttons).
   async function syncAction(serverAction) {
-    if (ACTION_POSES[serverAction]) showActionPose(ACTION_POSES[serverAction]);
+    var itemSrc = ACTION_POSES[serverAction] ? pickItem(state.species, serverAction) : null;
+    if (ACTION_POSES[serverAction]) {
+      showActionPose(ACTION_POSES[serverAction], itemSrc);
+      if (serverAction === 'clean' && itemSrc === CLEAN_ITEM_SPONGE) spawnWashBubbles();
+    }
     flash();
     try {
       var data = await api('/api/pets/' + device.petId + '/action', {
@@ -1767,6 +1908,7 @@
     state.happiness = clamp(state.happiness + 20);
     state.energy = clamp(state.energy - 3);
     state.hunger = clamp(state.hunger - 2);
+    state.cleanliness = clamp(state.cleanliness - 10);
   }));
 
   btnClean.addEventListener('click', doAction('clean', function () {
@@ -1779,6 +1921,7 @@
     state.sleeping = !state.sleeping;
     actionPose = null;
     clearTimeout(actionPoseTimer);
+    itemSprite.classList.remove('show');
   }));
 
   renameToggle.addEventListener('click', function () {
@@ -1934,6 +2077,51 @@
     if (bubbleTimer) clearInterval(bubbleTimer);
     bubbleTimer = null;
     hatchBubbles.innerHTML = '';
+  }
+
+  // Sponge-wash burst: unlike the continuous hatch-bubble stream above,
+  // this fires a one-off bunch around the pet's feet whenever the sponge
+  // (not the brush) is picked as the clean item, staggered slightly so
+  // they don't all rise in lockstep. Reuses the same bubble sprites/sizing
+  // logic, but each one pops (.wash-bubble / bubblePop) partway up rather
+  // than drifting all the way to the top of the stage.
+  var WASH_BUBBLE_COUNT = 7;
+
+  // Tracked so switching pets mid-bath can cancel the ones still queued —
+  // otherwise a stagger delay lands after the swap and the new pet gets a
+  // puff of someone else's bathwater.
+  var washBubbleTimers = [];
+
+  function spawnWashBubble(delayMs) {
+    washBubbleTimers.push(setTimeout(function () {
+      var el = document.createElement('img');
+      el.className = 'wash-bubble';
+      el.src = BUBBLE_SPRITES[Math.floor(Math.random() * BUBBLE_SPRITES.length)];
+      el.alt = '';
+      var spriteW = petSprite.getBoundingClientRect().width || 128;
+      el.style.setProperty('--bubble-size', Math.round(16 * (spriteW / 128)) + 'px');
+      // Spread across the pet's stance rather than the hatch bubbles' single
+      // shell-lip band, and anchored right at the feet (low on the stage).
+      el.style.left = (26 + Math.random() * 48) + '%';
+      el.style.bottom = (4 + Math.random() * 10) + '%';
+      el.style.setProperty('--bubble-dur', (1.0 + Math.random() * 0.5).toFixed(2) + 's');
+      el.style.setProperty('--bubble-drift', (Math.random() * 14 - 7).toFixed(0) + 'px');
+      el.addEventListener('animationend', function () { el.remove(); });
+      washBubbles.appendChild(el);
+    }, delayMs));
+  }
+
+  function spawnWashBubbles() {
+    clearWashBubbles();
+    for (var i = 0; i < WASH_BUBBLE_COUNT; i++) {
+      spawnWashBubble(Math.random() * 500);
+    }
+  }
+
+  function clearWashBubbles() {
+    washBubbleTimers.forEach(clearTimeout);
+    washBubbleTimers = [];
+    washBubbles.innerHTML = '';
   }
 
   function clearHatchTimers() {

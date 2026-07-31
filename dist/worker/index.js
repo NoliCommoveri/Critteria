@@ -127,7 +127,7 @@ function serializePet(pet) {
 __name(serializePet, "serializePet");
 
 // _lib/care.js
-var GOOD_CARE_AVG = 70;
+var GOOD_CARE_AVG = 80;
 var UNLOCK_AT_DAYS = [7, 21];
 var MAX_PETS_PER_KID = UNLOCK_AT_DAYS.length + 1;
 function utcDay(now) {
@@ -194,6 +194,7 @@ function applyEffect(pet, action) {
     pet.happiness = clamp2(pet.happiness + 20);
     pet.energy = clamp2(pet.energy - 3);
     pet.hunger = clamp2(pet.hunger - 2);
+    pet.cleanliness = clamp2(pet.cleanliness - 10);
   } else if (action === "clean") {
     pet.cleanliness = 100;
   } else if (action === "sleep") {
@@ -647,7 +648,7 @@ async function onRequestPost8({ request, env }) {
 }
 __name(onRequestPost8, "onRequestPost");
 
-// ../.wrangler/tmp/pages-X2AYBy/functionsRoutes-0.054450310460382845.mjs
+// ../.wrangler/tmp/pages-Ra6478/functionsRoutes-0.8277803415445368.mjs
 var routes = [
   {
     routePath: "/api/kids/:id/claim",

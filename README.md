@@ -58,7 +58,10 @@ live in this repo's `main` history.
 - **Multiple pets**: a kid earns a second pet after 7 good-care days and
   a third after 21, capped at three. A good-care day is banked by
   looking after your *own* pet well enough to leave its stats averaging
-  70+ — once per day, and helping a sibling never counts. The pet you're
+  80+ — once per day, and helping a sibling never counts. Since only
+  sleep raises energy, a full round of care (and, on a pet that's been
+  up all day, a nap) is what banks a day; mashing feed/play/clean at an
+  exhausted pet doesn't. The pet you're
   not currently watching sits in the "burrow" and decays at a tenth of
   the normal rate, so extra pets add care load without multiplying it.
   The roster strip above the pet shows what you have and how many days
