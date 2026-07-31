@@ -1623,9 +1623,31 @@ dashboard, then verify the API is alive before wiring the frontend:
 
 **Confirmed working on the live deployment:** the `/api/kids` no-token
 check, and a real `/api/family` call that returned a device token (after
-the Step 5 schema-drift gotcha above was fixed). Not yet confirmed: the
-wrong-secret rejection, and the pairing-code round-trip. Whoever picks
-this back up should run those before calling Step 9 fully done.
+the Step 5 schema-drift gotcha above was fixed).
+
+**Confirmed working against a local `wrangler dev --local` + D1 instance
+(schema applied via `npx wrangler d1 execute critteria --local`):** the
+`/api/kids` no-token check, the wrong-secret rejection on `/api/family`
+(`401 {"error":"invalid signup secret"}`), the one-family-per-deployment
+guard (`409` on a second `/api/family` call), and the full pairing-code
+round-trip — mint via `/api/pairing-code`, redeem via `/api/pair`, and
+confirm single-use (redeeming the same code twice returns `400
+{"error":"invalid or expired code"}` on the second attempt). No code
+changes were needed; all of it worked as specced on first try.
+
+*Gotcha found while setting this up:* `wrangler dev`'s default
+`--persist-to` (`.wrangler/state` inside the project) sits inside the
+directory wrangler file-watches for reload triggers, so every D1 write
+(including the schema apply) makes it reload itself, forever, before it
+ever binds the port. Point `--persist-to` at a directory outside the
+project (e.g. `wrangler dev --local --persist-to /tmp/critteria-state`)
+to avoid the loop.
+
+**Still not confirmed against the actual live `critteria.immotus.app`
+deployment:** the wrong-secret rejection and the pairing-code round-trip
+— the local run above exercises the same code path but not the real D1
+binding, secrets, or network. Whoever has the production `SIGNUP_SECRET`
+should still run the live curl sequence below at least once.
 
 ```
 curl -i https://critteria.immotus.app/api/kids
