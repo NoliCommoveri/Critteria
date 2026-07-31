@@ -543,7 +543,7 @@ async function onRequestPost6({ request, env }) {
   const codeHash = await sha256Hex(String(code).toUpperCase());
   const now = Date.now();
   const row = await env.DB.prepare(
-    "SELECT family_id, expires_at, used_at FROM pairing_codes WHERE code_hash = ?"
+    "SELECT family_id, kid_id, expires_at, used_at FROM pairing_codes WHERE code_hash = ?"
   ).bind(codeHash).first();
   if (!row || row.used_at !== null || row.expires_at < now) {
     return Response.json({ error: "invalid or expired code" }, { status: 400 });
@@ -558,9 +558,12 @@ async function onRequestPost6({ request, env }) {
   const tokenHash = await sha256Hex(token);
   await env.DB.prepare(
     `INSERT INTO devices (id, family_id, kid_id, token_hash, label, created_at, last_seen, revoked)
-     VALUES (?, ?, NULL, ?, ?, ?, ?, 0)`
-  ).bind(deviceId, row.family_id, tokenHash, label || null, now, now).run();
-  return Response.json({ token, deviceId, familyId: row.family_id }, { status: 201 });
+     VALUES (?, ?, ?, ?, ?, ?, ?, 0)`
+  ).bind(deviceId, row.family_id, row.kid_id || null, tokenHash, label || null, now, now).run();
+  return Response.json(
+    { token, deviceId, familyId: row.family_id, kidId: row.kid_id || null },
+    { status: 201 }
+  );
 }
 __name(onRequestPost6, "onRequestPost");
 
@@ -569,6 +572,19 @@ var TTL_MS = 5 * 60 * 1e3;
 async function onRequestPost7({ request, env }) {
   const device = await authenticate(request, env);
   if (!device) return unauthorized();
+  let body = null;
+  try {
+    body = await request.json();
+  } catch (e) {
+  }
+  const bindKid = !!(body && body.bindKid);
+  if (bindKid && !device.kidId) {
+    return Response.json(
+      { error: "this device has not claimed a kid yet, so it cannot share one" },
+      { status: 403 }
+    );
+  }
+  const kidId = bindKid ? device.kidId : null;
   const now = Date.now();
   const expiresAt = now + TTL_MS;
   let lastError;
@@ -577,9 +593,9 @@ async function onRequestPost7({ request, env }) {
     const codeHash = await sha256Hex(code);
     try {
       await env.DB.prepare(
-        "INSERT INTO pairing_codes (code_hash, family_id, expires_at, used_at) VALUES (?, ?, ?, NULL)"
-      ).bind(codeHash, device.familyId, expiresAt).run();
-      return Response.json({ code, expiresAt });
+        "INSERT INTO pairing_codes (code_hash, family_id, kid_id, expires_at, used_at) VALUES (?, ?, ?, ?, NULL)"
+      ).bind(codeHash, device.familyId, kidId, expiresAt).run();
+      return Response.json({ code, expiresAt, kidId });
     } catch (e) {
       lastError = e;
     }
@@ -648,7 +664,7 @@ async function onRequestPost8({ request, env }) {
 }
 __name(onRequestPost8, "onRequestPost");
 
-// ../.wrangler/tmp/pages-Ra6478/functionsRoutes-0.8277803415445368.mjs
+// ../.wrangler/tmp/pages-6XnO9Y/functionsRoutes-0.4712426197433264.mjs
 var routes = [
   {
     routePath: "/api/kids/:id/claim",

@@ -89,7 +89,12 @@ Live tables (v1):
   token_hash (SHA-256; raw token never stored; token rotates while id
   does not), label ("Ana's tablet"), created_at, last_seen, revoked.
 - `pairing_codes` — code_hash (SHA-256 of 6-char code), family_id,
-  expires_at (5-min TTL), used_at (non-null once redeemed; single use).
+  kid_id (nullable), expires_at (5-min TTL), used_at (non-null once
+  redeemed; single use). A **null kid_id** is the original behavior: the
+  redeeming device joins the family and picks a kid itself. A **set
+  kid_id** stamps the minting device's own kid onto the code, so a
+  second tablet for the *same* kid lands straight on their pets with no
+  picker — the "my tablet and my phone" case (§7).
 - `pets` — id, kid_id, species, color_variant, name, stage, created_at,
   hunger, happiness, energy, cleanliness, sleeping, active,
   last_updated (server epoch ms; **decay is computed lazily on
@@ -1344,7 +1349,10 @@ functions/_lib/          Shared helpers imported by the handlers:
 functions/api/           Pages-Functions-style API handlers:
   family.js              POST — create family (SIGNUP_SECRET-gated).
   pairing-code.js        POST — mint a pairing code (auth'd).
-  pair.js                POST — redeem a pairing code, get device token.
+                         `{bindKid:true}` also stamps the caller's kid
+                         onto it, for a second tablet for that same kid.
+  pair.js                POST — redeem a pairing code, get device token
+                         (and the code's kid_id, when it carries one).
   kids.js                GET, POST — list/create kids (family-scoped
                          from the device token; the setup UI on the
                          bootstrap device seeds one row per sibling).
@@ -1689,6 +1697,11 @@ output that doesn't exist until Step 8 — that's expected.
 `env.ASSETS` for static-file fallback.
 
 ### Step 7 — Set the signup secret (done)
+
+This is the value typed into the app's own **Start the family** box on
+the first tablet (§9 Step 10) — the curl/PowerShell call further down is
+only the manual verification path, not how the family is meant to be
+created.
 
 Worker → Settings → **Variables and secrets** → add `SIGNUP_SECRET`,
 type **Secret**, value = a long random string you generate:

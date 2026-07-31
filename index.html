@@ -429,12 +429,47 @@
   }
 
   /* --- Family sync screens (family-setup, kid-picker, sibling-visit) --- */
-  .setup-choice-row {
-    display: flex;
-    justify-content: center;
-    gap: 0.5rem;
+
+  /* Both ways in are shown at once rather than behind a "which are you?"
+     choice — the setup code box has to be on screen the moment the screen
+     is, or there's no way to start a family without a shell. Mirrors the
+     two-panel setup in Star-homeschool's parent.html. */
+  .setup-panel {
+    text-align: left;
+    border: 2px solid var(--bar-track);
+    border-radius: 14px;
+    padding: 0.8rem 0.9rem 0.2rem;
+    margin-bottom: 0.9rem;
+  }
+  .setup-panel-title {
+    font-size: 1rem;
+    margin: 0 0 0.3rem;
+  }
+  .setup-panel .picker-hint {
+    margin-bottom: 0.7rem;
+  }
+  .setup-label {
+    display: block;
+    text-align: left;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--muted);
     margin-bottom: 1rem;
   }
+  .setup-label input {
+    display: block;
+    width: 100%;
+    margin-top: 0.3rem;
+    padding: 0.6rem 0.8rem;
+    border: 2px solid var(--bar-track);
+    border-radius: 10px;
+    font: inherit;
+    font-weight: 400;
+    background: var(--card);
+    color: inherit;
+  }
+  .setup-msg:empty { display: none; }
+  .setup-msg { margin: 0 0 0.6rem; }
   .inline-form {
     display: flex;
     gap: 0.5rem;
@@ -660,20 +695,31 @@
 
     <div class="species-picker" id="family-setup">
       <h1 class="picker-title">Set up this tablet</h1>
-      <p class="picker-hint">Is this the very first tablet, or do you have a pairing code from another one?</p>
-      <div class="setup-choice-row">
-        <button type="button" class="species-btn" id="setup-choice-first"><span class="emoji">🏠</span> First tablet</button>
-        <button type="button" class="species-btn" id="setup-choice-pair"><span class="emoji">🔗</span> I have a code</button>
+
+      <label class="setup-label">This tablet's name (optional)
+        <input type="text" id="setup-device-label" maxlength="60" placeholder="e.g. Ana's tablet" autocomplete="off">
+      </label>
+
+      <div class="setup-panel">
+        <h2 class="setup-panel-title"><span class="emoji">🏠</span> Start the family</h2>
+        <p class="picker-hint">First tablet? Enter the family setup code from the Cloudflare settings.</p>
+        <form class="inline-form" id="setup-secret-form">
+          <input type="password" id="setup-secret-input" placeholder="Family setup code" autocomplete="off">
+          <button type="submit">Create family</button>
+        </form>
+        <p class="status setup-msg" id="setup-secret-status"></p>
       </div>
-      <form class="inline-form" id="setup-secret-form" style="display: none;">
-        <input type="password" id="setup-secret-input" placeholder="Family setup code" autocomplete="off">
-        <button type="submit">Continue</button>
-      </form>
-      <form class="inline-form" id="setup-pair-form" style="display: none;">
-        <input type="text" id="setup-pair-input" maxlength="6" placeholder="6-character code" autocomplete="off" style="text-transform: uppercase;">
-        <button type="submit">Continue</button>
-      </form>
-      <p class="status" id="setup-status"></p>
+
+      <div class="setup-panel">
+        <h2 class="setup-panel-title"><span class="emoji">🔗</span> Join the family</h2>
+        <p class="picker-hint">Already set up on another tablet? Tap 📲 there and type its code here.</p>
+        <form class="inline-form" id="setup-pair-form">
+          <input type="text" id="setup-pair-input" maxlength="6" placeholder="6-character code" autocomplete="off" style="text-transform: uppercase;">
+          <button type="submit">Join family</button>
+        </form>
+        <p class="status setup-msg" id="setup-pair-status"></p>
+      </div>
+
       <button type="button" class="back-link" id="setup-cancel">← Not now</button>
     </div>
 
@@ -708,10 +754,17 @@
 
     <div class="species-picker" id="add-device">
       <h1 class="picker-title">Add another tablet</h1>
-      <p class="picker-hint">Enter this code on the new tablet's "I have a code" screen.</p>
+      <p class="picker-hint">Who is the new tablet for? Type the code it gives you into that tablet's "Join the family" box.</p>
+      <div class="setup-choice-row">
+        <button type="button" class="species-btn" id="pairing-scope-kid"><span class="emoji">👤</span> My other tablet</button>
+        <button type="button" class="species-btn" id="pairing-scope-family"><span class="emoji">👨‍👩‍👧‍👦</span> Someone else's</button>
+      </div>
+      <p class="picker-hint" id="pairing-scope-note"></p>
       <div class="pairing-code-display" id="pairing-code-display">------</div>
       <p class="status" id="pairing-code-status"></p>
       <button type="button" class="species-btn" id="pairing-code-refresh">🔄 Get a new code</button>
+      <p class="picker-hint disconnect-hint">Setting the family up again from scratch? Disconnecting forgets this tablet's family login so you can enter the setup code again. The pet on this tablet stays put.</p>
+      <button type="button" class="back-link" id="disconnect-device">Disconnect this tablet</button>
       <button type="button" class="back-link" id="pairing-code-back">← Back to your pet</button>
     </div>
 
@@ -2260,35 +2313,31 @@
 
   // --- Family setup screen --------------------------------------------------
 
-  var setupChoiceFirst = document.getElementById('setup-choice-first');
-  var setupChoicePair = document.getElementById('setup-choice-pair');
   var setupSecretForm = document.getElementById('setup-secret-form');
   var setupPairForm = document.getElementById('setup-pair-form');
-  var setupStatusEl = document.getElementById('setup-status');
+  var setupSecretStatus = document.getElementById('setup-secret-status');
+  var setupPairStatus = document.getElementById('setup-pair-status');
+  var setupDeviceLabel = document.getElementById('setup-device-label');
   var setupCancel = document.getElementById('setup-cancel');
 
-  function setupStatus(text) { setupStatusEl.textContent = text; }
-
-  function deviceLabel() {
-    return (navigator.platform || 'Tablet') + ' — ' + (state.name ? state.name + "'s" : 'family') + ' device';
+  function clearSetupStatus() {
+    setupSecretStatus.textContent = '';
+    setupPairStatus.textContent = '';
   }
 
-  setupChoiceFirst.addEventListener('click', function () {
-    setupPairForm.style.display = 'none';
-    setupSecretForm.style.display = 'flex';
-    setupStatus('');
-  });
-
-  setupChoicePair.addEventListener('click', function () {
-    setupSecretForm.style.display = 'none';
-    setupPairForm.style.display = 'flex';
-    setupStatus('');
-  });
+  // Whatever the grown-up typed, falling back to something identifiable so
+  // the Devices list isn't four rows of the same string.
+  function deviceLabel() {
+    var typed = setupDeviceLabel.value.trim();
+    if (typed) return typed;
+    return (navigator.platform || 'Tablet') + ' — ' + (state.name ? state.name + "'s" : 'family') + ' device';
+  }
 
   setupSecretForm.addEventListener('submit', async function (e) {
     e.preventDefault();
     var secret = document.getElementById('setup-secret-input').value.trim();
-    setupStatus('Setting up…');
+    clearSetupStatus();
+    setupSecretStatus.textContent = 'Setting up…';
     try {
       var data = await api('/api/family', {
         method: 'POST',
@@ -2299,16 +2348,19 @@
       saveDevice();
       boot();
     } catch (err) {
-      setupStatus(err.status === 409
-        ? 'A family already exists — use a pairing code from another tablet instead.'
-        : "That code didn't work. Ask a grown-up to check it.");
+      setupSecretStatus.textContent = err.status === 409
+        ? 'A family already exists — use a join code from another tablet instead.'
+        : err.status === 401
+          ? "That setup code didn't work — check it against the Cloudflare settings."
+          : err.message;
     }
   });
 
   setupPairForm.addEventListener('submit', async function (e) {
     e.preventDefault();
-    var code = document.getElementById('setup-pair-input').value.trim();
-    setupStatus('Connecting…');
+    var code = document.getElementById('setup-pair-input').value.trim().toUpperCase();
+    clearSetupStatus();
+    setupPairStatus.textContent = 'Connecting…';
     try {
       var data = await api('/api/pair', {
         method: 'POST',
@@ -2316,10 +2368,13 @@
       });
       device.token = data.token;
       device.familyId = data.familyId;
+      // A kid-bound code already picked who this tablet belongs to, so
+      // boot() goes straight past the kid picker to that kid's pets.
+      if (data.kidId) device.kidId = data.kidId;
       saveDevice();
       boot();
     } catch (err) {
-      setupStatus("That code didn't work — codes expire after 5 minutes and work once.");
+      setupPairStatus.textContent = "That code didn't work — codes expire after 5 minutes and work once.";
     }
   });
 
@@ -2338,9 +2393,33 @@
   });
 
   connectToggle.addEventListener('click', function () {
-    setupSecretForm.style.display = 'none';
-    setupPairForm.style.display = 'none';
-    setupStatus('');
+    clearSetupStatus();
+    setUiScreen('family-setup');
+  });
+
+  // Star-homeschool's signOut(), adapted: forget this tablet's family login
+  // locally so the setup screen — and with it the setup-code box — becomes
+  // reachable again. Without this there is no way back once device.token
+  // exists, which is exactly the hole you fall into after the family is
+  // rebuilt server-side and every stored token stops matching a row.
+  //
+  // Deliberately local-only, same as Star's: it does not revoke the device
+  // server-side. Use the Devices list for that (DELETE /api/devices/:id).
+  document.getElementById('disconnect-device').addEventListener('click', function () {
+    if (!window.confirm('Disconnect this tablet from the family? Your pet stays on this tablet, but it will stop syncing until you set it up again.')) return;
+    stopSyncPoll();
+    device.token = null;
+    device.familyId = null;
+    device.kidId = null;
+    device.petId = null;
+    saveDevice();
+    // The roster keeps playing locally from here, so drop the server's
+    // unlock progress and fall back to what this tablet banked itself.
+    serverCare = null;
+    // Server pet ids are meaningless without the family they belonged to.
+    roster.forEach(function (p) { p.id = null; });
+    saveState();
+    clearSetupStatus();
     setUiScreen('family-setup');
   });
 
@@ -2357,6 +2436,9 @@
   var pairingCodeStatusEl = document.getElementById('pairing-code-status');
   var pairingCodeRefresh = document.getElementById('pairing-code-refresh');
   var pairingCodeBack = document.getElementById('pairing-code-back');
+  var pairingScopeKid = document.getElementById('pairing-scope-kid');
+  var pairingScopeFamily = document.getElementById('pairing-scope-family');
+  var pairingScopeNote = document.getElementById('pairing-scope-note');
   var pairingCodeCountdownTimer = null;
   var pairingCodeExpiresAt = null;
 
@@ -2377,12 +2459,30 @@
     pairingCodeStatus('Expires in ' + secondsLeft + 's — one use only.');
   }
 
+  // Which kind of code the buttons above are currently minting. A kid-bound
+  // code drops the new tablet straight onto this kid's pets; a plain one
+  // sends it to the kid picker so a sibling can claim it.
+  var pairingBindKid = true;
+
+  function renderPairingScope() {
+    pairingScopeKid.classList.toggle('active', pairingBindKid);
+    pairingScopeFamily.classList.toggle('active', !pairingBindKid);
+    pairingScopeNote.textContent = pairingBindKid
+      ? 'The new tablet will open straight onto ' + (state.name ? state.name : 'your pet') +
+        " — same pets, same care days, either tablet."
+      : 'The new tablet will join the family and ask who is playing.';
+  }
+
   async function mintPairingCode() {
     stopPairingCodeCountdown();
+    renderPairingScope();
     pairingCodeDisplay.textContent = '------';
     pairingCodeStatus('Getting a code…');
     try {
-      var data = await api('/api/pairing-code', { method: 'POST' });
+      var data = await api('/api/pairing-code', {
+        method: 'POST',
+        body: { bindKid: pairingBindKid }
+      });
       // Split for readability (e.g. "AB3 F7Q") — purely cosmetic, the
       // space isn't part of the code the other tablet types in.
       pairingCodeDisplay.textContent = data.code.slice(0, 3) + ' ' + data.code.slice(3);
@@ -2394,7 +2494,23 @@
     }
   }
 
+  pairingScopeKid.addEventListener('click', function () {
+    if (pairingBindKid) return;
+    pairingBindKid = true;
+    mintPairingCode();
+  });
+
+  pairingScopeFamily.addEventListener('click', function () {
+    if (!pairingBindKid) return;
+    pairingBindKid = false;
+    mintPairingCode();
+  });
+
   addDeviceToggle.addEventListener('click', function () {
+    // A tablet that hasn't claimed a kid can only mint a family code, and
+    // the server would 403 the kid-bound one.
+    pairingBindKid = !!device.kidId;
+    pairingScopeKid.style.display = device.kidId ? '' : 'none';
     setUiScreen('add-device');
     mintPairingCode();
   });
@@ -2650,6 +2766,13 @@
     syncPollTimer = setInterval(function () {
       if (document.visibilityState === 'visible') pollPet();
     }, 5000);
+  }
+
+  // Counterpart to the above, for disconnecting: without it the 5 s poll
+  // keeps firing at a family this tablet has just left.
+  function stopSyncPoll() {
+    clearInterval(syncPollTimer);
+    syncPollTimer = null;
   }
 
   // Polls the whole roster in one request rather than one request per pet:

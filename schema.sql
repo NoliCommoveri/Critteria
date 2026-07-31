@@ -38,6 +38,10 @@ CREATE INDEX idx_devices_token ON devices(token_hash);
 CREATE TABLE pairing_codes (
   code_hash   TEXT PRIMARY KEY,       -- SHA-256 of 6-char code
   family_id   TEXT NOT NULL REFERENCES families(id),
+  -- NULL = the redeeming device joins the family and picks a kid itself.
+  -- Set = the code also carries a kid, so a second tablet for the SAME
+  -- kid lands straight on their pets with no picker (SPEC.md §7).
+  kid_id      TEXT REFERENCES kids(id),
   expires_at  INTEGER NOT NULL,       -- 5-min TTL
   used_at     INTEGER                 -- non-null once redeemed; single use
 );
